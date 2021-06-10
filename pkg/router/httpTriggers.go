@@ -168,11 +168,16 @@ func (ts *HTTPTriggerSet) getRouter(fnTimeoutMap map[types.UID]int) *mux.Router 
 		}
 
 		ht := muxRouter.HandleFunc(trigger.Spec.RelativeURL, fh.handler)
-		ht.Methods(trigger.Spec.Method)
+		methods := trigger.Spec.Methods
+		if len(trigger.Spec.Method) > 0 {
+			methods = append(methods, trigger.Spec.Method)
+		}
+		ht.Methods(methods...)
 		if trigger.Spec.Host != "" {
 			ht.Host(trigger.Spec.Host)
 		}
-		if trigger.Spec.RelativeURL == "/" && trigger.Spec.Method == "GET" {
+
+		if trigger.Spec.RelativeURL == "/" && len(methods) == 1 && methods[0] == "GET" {
 			homeHandled = true
 		}
 	}
