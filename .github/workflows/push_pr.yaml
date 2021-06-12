@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-18.04, ubuntu-20.04, ubuntu-latest]
-        kindver: [v1.19.0]
+      #  kindver: [v1.19.0]
         gover: [1.15.12, 1.16]
     steps:
       - name: Checkout sources
@@ -41,7 +41,7 @@ jobs:
       - name: Kind Clutser
         uses: container-tools/kind-action@v1
         with:
-          kubectl_version: ${{ matrix.kindver }}
+         # kubectl_version: ${{ matrix.kindver }}
           config: kind.yaml
       - name: Configuring and testing the Installation
         run: |
