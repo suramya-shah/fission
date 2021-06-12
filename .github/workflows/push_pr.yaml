@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-18.04, ubuntu-20.04]
-        kindver: [v1.0.0-alpha.2, v1.0.0-rc.1, v1.1.0]
+        kindver: [v1.0.0, v1.1.0]
         gover: [1.15.12, 1.16]
     steps:
       - name: Checkout sources
