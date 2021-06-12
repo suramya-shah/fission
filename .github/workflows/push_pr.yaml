@@ -10,14 +10,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Job to run change detection
+  # Job to run change detection 1.16
   integration-test:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-18.04, ubuntu-20.04, ubuntu-latest]
         kindver: [ v0.9.0, v0.10.0, v0.11.0]
-        gover: [1.15.12, 1.16]
+        gover: [1.15.12]
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2.3.4
