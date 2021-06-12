@@ -47,6 +47,7 @@ jobs:
       - name: Configuring and testing the Installation
         run: |
           sleep 120
+          kubectl version
           kubectl cluster-info --context kind-kind
           kubectl cluster-info dump
           kind get kubeconfig --internal >$HOME/.kube/config
