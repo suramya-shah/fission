@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, ubuntu-latest]
+        os: [ubuntu-18.04, ubuntu-20.04]
         kindver: [ v0.9.0, v0.10.0, v0.11.0]
         gover: [1.15.12]
     steps:
