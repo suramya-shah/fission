@@ -39,8 +39,8 @@ jobs:
           version: v3.3.4
 
       - name: Kind Clutser
-        uses: helm/kind-action@v1.1.0
-       # uses: engineerd/setup-kind@v0.5.0
+       # uses: helm/kind-action@v1.1.0
+        uses: engineerd/setup-kind@v0.5.0
         with:
          # kubectl_version: ${{ matrix.kindver }}
           config: kind.yaml
