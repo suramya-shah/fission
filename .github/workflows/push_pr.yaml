@@ -48,6 +48,7 @@ jobs:
       - name: Configuring and testing the Installation
         run: |
           sleep 60
+          kubectl config use-context kind-kind
           kubectl version
           kubectl cluster-info --context kind-kind
           kubectl cluster-info dump
