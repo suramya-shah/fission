@@ -46,7 +46,7 @@ jobs:
           version:  ${{ matrix.kindver }} 
       - name: Configuring and testing the Installation
         run: |
-          sleep 30
+          sleep 120
           kubectl cluster-info --context kind-kind
           kubectl cluster-info dump
           kind get kubeconfig --internal >$HOME/.kube/config
