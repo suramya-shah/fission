@@ -3,16 +3,19 @@ name: Fission CI
 on:
   push:
     branches:
-      - master
-  pull_request:
-    branches:
-      - master
+      - feature/multi-env-tests
+ # pull_request:
+  #  branches:
+   #   - master
   workflow_dispatch:
 
 jobs:
   # Job to run change detection
   integration-test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-18.04, ubuntu-20.04]
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2.3.4
