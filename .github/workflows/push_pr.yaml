@@ -38,10 +38,10 @@ jobs:
           version: v3.3.4
 
       - name: Kind Clutser
-        uses: helm/kind-action@${{ matrix.kindver }}
+        uses: helm/kind-action@v1.1.0
         with:
           config: kind.yaml
-
+          version: ${{ matrix.kindver }} 
       - name: Configuring and testing the Installation
         run: |
           kubectl cluster-info --context kind-kind
