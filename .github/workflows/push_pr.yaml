@@ -44,7 +44,7 @@ jobs:
         with:
          # kubectl_version: ${{ matrix.kindver }}
           config: kind.yaml
-          version:  ${{ matrix.kindver }} 
+        #  version:  ${{ matrix.kindver }} 
       - name: Configuring and testing the Installation
         run: |
           sleep 60
