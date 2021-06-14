@@ -17,7 +17,7 @@ jobs:
       matrix:
         os: [ubuntu-18.04, ubuntu-20.04]
         kindver: [ v0.9.0, v0.10.0, v0.11.0]
-        gover: [1.15.12]
+      #  gover: [1.15.12]
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2.3.4
@@ -31,7 +31,7 @@ jobs:
       - name: setup go
         uses: actions/setup-go@v2.1.3
         with:
-          go-version: ${{ matrix.gover }} 
+          go-version: 1.15.12
 
       - name: Helm installation
         uses: Azure/setup-helm@v1
