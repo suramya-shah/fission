@@ -25,4 +25,4 @@ nodes:
     protocol: TCP
 networking:
   apiServerAddress: 127.0.0.1
-  apiServerPort: 6443
+  apiServerPort: 2379
