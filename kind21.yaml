@@ -23,3 +23,6 @@ nodes:
   - containerPort: 443
     hostPort: 443
     protocol: TCP
+networking:
+  ipFamily: ipv6
+  apiServerAddress: 127.0.0.1
