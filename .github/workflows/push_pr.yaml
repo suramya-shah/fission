@@ -56,7 +56,10 @@ jobs:
           kubectl version
           kubectl cluster-info --context kind-kind
           kubectl get nodes
-          kind get kubeconfig --internal >$HOME/.kube/config          
+          kubectl get pods --all-namespaces
+          kind get kubeconfig --internal >$HOME/.kube/config
+          cat $HOME/.kube/config
+          cat /etc/hostname
           sudo apt-get install -y apache2-utils
 
       - name: Static code analysis
@@ -79,6 +82,8 @@ jobs:
 
       - name: Build and Install Fission
         run: |
+          kubectl get nodes
+          kubectl get pods --all-namespaces
           kubectl create ns fission
           kubectl create -k crds/v1
           skaffold run -p kind-ci
