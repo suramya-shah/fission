@@ -48,7 +48,7 @@ jobs:
          # kubectl_version: ${{ matrix.kindver }}
           config: ${{ matrix.kindfile }}
         #  image:  ${{ matrix.kindimage }}
-         # version:  v0.11.1
+          version:  v0.10.0
       - name: Configuring and testing the Installation
         run: |
           sleep 60
