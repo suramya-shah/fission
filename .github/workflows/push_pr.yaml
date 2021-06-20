@@ -69,8 +69,8 @@ jobs:
           ./hack/verify-govet.sh
           helm lint charts/fission-all/ charts/fission-core/
 
-      - name: Run unit tests
-        run: ./hack/runtests.sh
+   #   - name: Run unit tests
+   #     run: ./hack/runtests.sh
 
       - name: Helm update
         run: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
