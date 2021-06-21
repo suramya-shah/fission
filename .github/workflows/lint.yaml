@@ -1,0 +1,26 @@
+name: Lint
+
+on:
+  # Trigger the workflow on push or pull request,
+  # but only for the main branch
+  push:
+    branches:
+      - feature/lint
+  pull_request:
+    branches:
+      - feature/lint
+
+jobs:
+  run-linters:
+    name: Run linters
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+      - name: Run linters
+        uses: wearerequired/lint-action@v1
+        with:
+          gofmt: true
+          auto_fix: true
