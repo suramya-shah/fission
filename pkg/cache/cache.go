@@ -27,6 +27,7 @@ type requestType int
 
 const (
 	GET requestType = iota
+	
 	SET
 	DELETE
 	EXPIRE
