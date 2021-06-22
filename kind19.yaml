@@ -1,0 +1,11 @@
+#######################################################################################
+# Kind Config for running a local cluster (More about Kind:https://kind.sigs.k8s.io/)
+# Creates a three node cluster for local development and testing
+#
+#######################################################################################
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  image: kindest/node:v1.19.11@sha256:7664f21f9cb6ba2264437de0eb3fe99f201db7a3ac72329547ec4373ba5f5911
