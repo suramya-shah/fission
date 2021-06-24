@@ -1,5 +1,8 @@
 name: release
 on:
+  push:
+    branches:
+      - feature/release
   workflow_dispatch:
 jobs:
   build_release:
