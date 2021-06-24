@@ -14,9 +14,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set env
-        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV          
+        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}">>$GITHUB_ENV          
       - name: run release
-        run: ./release.sh "$RELEASE_VERSION"
+        run:  hack/release.sh "$RELEASE_VERSION"
       - name: release
         uses: actions/create-release@v1
         id: create_release
