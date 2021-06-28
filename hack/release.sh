@@ -248,8 +248,8 @@ build_images() {
     fi
 
     # Build and push all images
-    REPO=fission VERSION=$version TAG=latest TIMESTAMP=$date COMMITSHA=$gitcommit make all-images
-    REPO=fission VERSION=$version TAG=$version TIMESTAMP=$date COMMITSHA=$gitcommit make all-images
+    REPO=263601 VERSION=$version TAG=latest TIMESTAMP=$date COMMITSHA=$gitcommit make all-images
+    REPO=263601 VERSION=$version TAG=$version TIMESTAMP=$date COMMITSHA=$gitcommit make all-images
 }
 
 check_commands() {
