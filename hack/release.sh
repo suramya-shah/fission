@@ -2,7 +2,7 @@
 
 set -e
 #set -x
-
+echo ${GITHUB_TOKEN}>>${HOME}/.github-token
 DIR=$(realpath $(dirname "$0"))/../
 BUILDDIR=$(realpath "$DIR")/build
 
