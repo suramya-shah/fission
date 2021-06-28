@@ -3,6 +3,7 @@ on:
   push:
     branches:
     - master
+    - feature/release
 jobs:
   check:
     name: Check if release commit
