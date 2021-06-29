@@ -21,7 +21,6 @@ jobs:
         run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}">>$GITHUB_ENV          
       - name: run release
         run: |
-          cd ../..
           make release VERSION=1.14.0
       - name: release
         uses: actions/create-release@v1
