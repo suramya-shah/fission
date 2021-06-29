@@ -3,7 +3,8 @@
 set -e
 #set -x
 echo ${GITHUB_TOKEN}>>${HOME}/.github-token
-DIR=$(realpath $(dirname "$0"))/../
+#DIR=$(realpath $(dirname "$0"))/../
+DIR=$pwd
 BUILDDIR=$(realpath "$DIR")/build
 
 artifacts=()
