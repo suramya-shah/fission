@@ -76,11 +76,10 @@ type (
 		enableIstio   bool
 		fetcherConfig *fetcherConfig.Config
 
-		funcStore      k8sCache.Store
-		funcController k8sCache.Controller
-		pkgStore       k8sCache.Store
-		pkgController  k8sCache.Controller
-		podInformer    k8sCache.SharedIndexInformer
+		funcInformer *k8sCache.SharedIndexInformer
+		pkgInformer  *k8sCache.SharedIndexInformer
+
+		podInformer k8sCache.SharedIndexInformer
 
 		defaultIdlePodReapTime time.Duration
 	}
@@ -103,7 +102,10 @@ func MakeGenericPoolManager(
 	metricsClient *metricsclient.Clientset,
 	functionNamespace string,
 	fetcherConfig *fetcherConfig.Config,
-	instanceID string) (executortype.ExecutorType, error) {
+	instanceID string,
+	funcInformer *k8sCache.SharedIndexInformer,
+	pkgInformer *k8sCache.SharedIndexInformer,
+) (executortype.ExecutorType, error) {
 
 	gpmLogger := logger.Named("generic_pool_manager")
 
@@ -120,6 +122,8 @@ func MakeGenericPoolManager(
 		requestChannel:         make(chan *request),
 		defaultIdlePodReapTime: 2 * time.Minute,
 		fetcherConfig:          fetcherConfig,
+		funcInformer:           funcInformer,
+		pkgInformer:            pkgInformer,
 	}
 
 	go gpm.service()
@@ -132,16 +136,14 @@ func MakeGenericPoolManager(
 		gpm.enableIstio = istio
 	}
 
-	gpm.funcStore, gpm.funcController = gpm.makeFuncController(
-		gpm.fissionClient, gpm.kubernetesClient, gpm.namespace, gpm.enableIstio)
+	(*gpm.funcInformer).AddEventHandler(gpm.FunctionEventHandlers(gpm.kubernetesClient, gpm.namespace, gpm.enableIstio))
+	(*gpm.pkgInformer).AddEventHandler(gpm.PackageEventHandlers(gpm.kubernetesClient, gpm.namespace))
 
-	gpm.pkgStore, gpm.pkgController = gpm.makePkgController(gpm.fissionClient, gpm.kubernetesClient, gpm.namespace)
-
-	informerFactory, err := utils.GetInformerFacoryByExecutor(gpm.kubernetesClient, fv1.ExecutorTypePoolmgr)
+	kubeInformerFactory, err := utils.GetInformerFactoryByExecutor(gpm.kubernetesClient, fv1.ExecutorTypePoolmgr)
 	if err != nil {
 		return nil, err
 	}
-	gpm.podInformer = informerFactory.Core().V1().Pods().Informer()
+	gpm.podInformer = kubeInformerFactory.Core().V1().Pods().Informer()
 	return gpm, nil
 }
 
@@ -149,8 +151,6 @@ func (gpm *GenericPoolManager) Run(ctx context.Context) {
 	// eagerPoolCreator must run after CleanupOldExecutorObjects.
 	// Otherwise, the poolmanager may wrongly delete the deployment.
 	go gpm.eagerPoolCreator()
-	go gpm.funcController.Run(ctx.Done())
-	go gpm.pkgController.Run(ctx.Done())
 	go gpm.podInformer.Run(ctx.Done())
 	go gpm.idleObjectReaper()
 }
@@ -211,7 +211,7 @@ func (gpm *GenericPoolManager) getPodInfo(obj apiv1.ObjectReference) (*apiv1.Pod
 	}
 
 	if err != nil || !exists {
-		gpm.logger.Debug("Falling back to getting pod info from k8s API -- this may cause performace issues for your function.")
+		gpm.logger.Debug("Falling back to getting pod info from k8s API -- this may cause performance issues for your function.")
 		pod, err := gpm.kubernetesClient.CoreV1().Pods(obj.Namespace).Get(context.TODO(), obj.Name, metav1.GetOptions{})
 		return pod, err
 	}
@@ -644,7 +644,7 @@ func (gpm *GenericPoolManager) idleObjectReaper() {
 				continue
 			}
 
-			if _, ok := gpm.fsCache.WebsocketFsvc[fsvc.Name]; ok {
+			if _, ok := gpm.fsCache.WebsocketFsvc.Load(fsvc.Name); ok {
 				continue
 			}
 			// For function with the environment that no longer exists, executor
@@ -725,8 +725,13 @@ func (gpm *GenericPoolManager) WebsocketStartEventChecker(kubeClient *kubernetes
 				zap.String("Pod name", mObj.GetName()))
 
 			podName := strings.SplitAfter(mObj.GetName(), ".")
-			if fsvc, ok := gpm.fsCache.PodToFsvc[strings.TrimSuffix(podName[0], ".")]; ok {
-				gpm.fsCache.WebsocketFsvc[fsvc.Name] = true
+			if fsvc, ok := gpm.fsCache.PodToFsvc.Load(strings.TrimSuffix(podName[0], ".")); ok {
+				fsvc, ok := fsvc.(*fscache.FuncSvc)
+				if !ok {
+					gpm.logger.Error("could not covert item from PodToFsvc")
+					return
+				}
+				gpm.fsCache.WebsocketFsvc.Store(fsvc.Name, true)
 			}
 		},
 	})
@@ -761,8 +766,12 @@ func (gpm *GenericPoolManager) NoActiveConnectionEventChecker(kubeClient *kubern
 				zap.String("Pod name", mObj.GetName()))
 
 			podName := strings.SplitAfter(mObj.GetName(), ".")
-			if fsvc, ok := gpm.fsCache.PodToFsvc[strings.TrimSuffix(podName[0], ".")]; ok {
-
+			if fsvc, ok := gpm.fsCache.PodToFsvc.Load(strings.TrimSuffix(podName[0], ".")); ok {
+				fsvc, ok := fsvc.(*fscache.FuncSvc)
+				if !ok {
+					gpm.logger.Error("could not covert value from PodToFsvc")
+					return
+				}
 				gpm.fsCache.DeleteFunctionSvc(fsvc)
 				for i := range fsvc.KubernetesObjects {
 					gpm.logger.Info("release idle function resources due to  inactivity",

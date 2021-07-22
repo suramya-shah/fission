@@ -26,6 +26,9 @@ const (
 	force        = "force"
 	Output       = "output"
 
+	Labels     = "labels"
+	Annotation = "annotation"
+
 	NamespaceFunction    = "fnNamespace"
 	NamespaceEnvironment = "envNamespace"
 	NamespacePackage     = "pkgNamespace"
@@ -45,6 +48,10 @@ const (
 	FnSpecializationTimeout = "specializationtimeout"
 	FnEnvironmentName       = "env"
 	FnPackageName           = "pkgname"
+	FnImageName             = "image"
+	FnPort                  = "port"
+	FnCommand               = "command"
+	FnArgs                  = "args"
 	FnEntrypoint            = "entrypoint"
 	FnBuildCmd              = "buildcmd"
 	FnSecret                = "secret"

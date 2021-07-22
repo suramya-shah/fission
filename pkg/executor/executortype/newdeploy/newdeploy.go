@@ -48,7 +48,7 @@ const (
 func (deploy *NewDeploy) createOrGetDeployment(fn *fv1.Function, env *fv1.Environment,
 	deployName string, deployLabels map[string]string, deployAnnotations map[string]string, deployNamespace string) (*appsv1.Deployment, error) {
 
-	specializationTimeout := int(fn.Spec.InvokeStrategy.ExecutionStrategy.SpecializationTimeout)
+	specializationTimeout := fn.Spec.InvokeStrategy.ExecutionStrategy.SpecializationTimeout
 	minScale := int32(fn.Spec.InvokeStrategy.ExecutionStrategy.MinScale)
 
 	// Always scale to at least one pod when createOrGetDeployment
@@ -262,7 +262,8 @@ func (deploy *NewDeploy) getDeploymentSpec(fn *fv1.Function, env *fv1.Environmen
 		// https://istio.io/docs/setup/kubernetes/additional-setup/requirements/
 		Ports: []apiv1.ContainerPort{
 			{
-				Name:          "http-env",
+				Name: "http-env",
+				// Now that we have added Port field in spec, should we make this configurable too?
 				ContainerPort: int32(8888),
 			},
 		},
@@ -453,8 +454,9 @@ func (deploy *NewDeploy) createOrGetSvc(deployLabels map[string]string, deployAn
 		Spec: apiv1.ServiceSpec{
 			Ports: []apiv1.ServicePort{
 				{
-					Name:       "http-env",
-					Port:       int32(80),
+					Name: "http-env",
+					Port: int32(80),
+					// Since Function spec now supports Port , should we make this configurable too?
 					TargetPort: intstr.FromInt(8888),
 				},
 			},
@@ -499,14 +501,16 @@ func (deploy *NewDeploy) deleteSvc(ns string, name string) error {
 	return deploy.kubernetesClient.CoreV1().Services(ns).Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
-func (deploy *NewDeploy) waitForDeploy(depl *appsv1.Deployment, replicas int32, specializationTimeout int) (*appsv1.Deployment, error) {
+func (deploy *NewDeploy) waitForDeploy(depl *appsv1.Deployment, replicas int32, specializationTimeout int) (latestDepl *appsv1.Deployment, err error) {
+	oldStatus := depl.Status
+
 	// if no specializationTimeout is set, use default value
 	if specializationTimeout < fv1.DefaultSpecializationTimeOut {
 		specializationTimeout = fv1.DefaultSpecializationTimeOut
 	}
 
 	for i := 0; i < specializationTimeout; i++ {
-		latestDepl, err := deploy.kubernetesClient.AppsV1().Deployments(depl.ObjectMeta.Namespace).Get(context.TODO(), depl.Name, metav1.GetOptions{})
+		latestDepl, err = deploy.kubernetesClient.AppsV1().Deployments(depl.ObjectMeta.Namespace).Get(context.TODO(), depl.Name, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -518,6 +522,10 @@ func (deploy *NewDeploy) waitForDeploy(depl *appsv1.Deployment, replicas int32, 
 		}
 		time.Sleep(time.Second)
 	}
+
+	deploy.logger.Error("Deployment provision failed within timeout window",
+		zap.String("name", latestDepl.ObjectMeta.Name), zap.Any("old_status", oldStatus),
+		zap.Any("current_status", latestDepl.Status), zap.Int("timeout", specializationTimeout))
 
 	// this error appears in the executor pod logs
 	timeoutError := fmt.Errorf("failed to create deployment within the timeout window of %d seconds", specializationTimeout)

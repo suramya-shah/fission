@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/dchest/uniuri"
-	"github.com/fission/fission/pkg/utils"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
@@ -50,6 +49,8 @@ import (
 	"github.com/fission/fission/pkg/executor/util"
 	fetcherClient "github.com/fission/fission/pkg/fetcher/client"
 	fetcherConfig "github.com/fission/fission/pkg/fetcher/config"
+	"github.com/fission/fission/pkg/utils"
+	"github.com/fission/fission/pkg/utils/maps"
 )
 
 type (
@@ -71,8 +72,7 @@ type (
 		fissionClient            *crd.FissionClient
 		fetcherConfig            *fetcherConfig.Config
 		stopReadyPodControllerCh chan struct{}
-		readyPodController       cache.Controller
-		readyPodIndexer          cache.Indexer
+		readyPodInformer         cache.SharedIndexInformer
 		readyPodQueue            workqueue.DelayingInterface
 		poolInstanceID           string // small random string to uniquify pod names
 		instanceID               string // poolmgr instance id
@@ -156,47 +156,73 @@ func MakeGenericPool(
 }
 
 func (gp *GenericPool) getEnvironmentPoolLabels() map[string]string {
-	return map[string]string{
-		fv1.EXECUTOR_TYPE:         string(fv1.ExecutorTypePoolmgr),
-		fv1.ENVIRONMENT_NAME:      gp.env.ObjectMeta.Name,
-		fv1.ENVIRONMENT_NAMESPACE: gp.env.ObjectMeta.Namespace,
-		fv1.ENVIRONMENT_UID:       string(gp.env.ObjectMeta.UID),
-		"managed":                 "true", // this allows us to easily find pods managed by the deployment
-	}
+	envLabels := maps.CopyStringMap(gp.env.ObjectMeta.Labels)
+	envLabels[fv1.EXECUTOR_TYPE] = string(fv1.ExecutorTypePoolmgr)
+	envLabels[fv1.ENVIRONMENT_NAME] = gp.env.ObjectMeta.Name
+	envLabels[fv1.ENVIRONMENT_NAMESPACE] = gp.env.ObjectMeta.Namespace
+	envLabels[fv1.ENVIRONMENT_UID] = string(gp.env.ObjectMeta.UID)
+	envLabels["managed"] = "true" // this allows us to easily find pods managed by the deployment
+	return envLabels
 }
 
 func (gp *GenericPool) getDeployAnnotations() map[string]string {
-	return map[string]string{
-		fv1.EXECUTOR_INSTANCEID_LABEL: gp.instanceID,
+	deployAnnotations := maps.CopyStringMap(gp.env.Annotations)
+	deployAnnotations[fv1.EXECUTOR_INSTANCEID_LABEL] = gp.instanceID
+	return deployAnnotations
+}
+
+func (gp *GenericPool) checkMetricsApi() bool {
+	apiGroups, err := gp.metricsClient.DiscoveryClient.ServerGroups()
+	if err != nil {
+		gp.logger.Error("faied to discover API groups", zap.Error(err))
+		return false
 	}
+	return utils.SupportedMetricsAPIVersionAvailable(apiGroups)
 }
 
 func (gp *GenericPool) updateCPUUtilizationSvc() {
-	for {
+	var metricsApiAvailabe bool
+	checkDuration := 30
+
+	if !gp.checkMetricsApi() {
+		checkDuration = 180
+		gp.logger.Warn("Metrics API not available")
+	}
+
+	serviceFunc := func() {
 		podMetricsList, err := gp.metricsClient.MetricsV1beta1().PodMetricses(gp.namespace).List(context.TODO(), metav1.ListOptions{
 			LabelSelector: "managed=false",
 		})
-
 		if err != nil {
 			gp.logger.Error("failed to fetch pod metrics list", zap.Error(err))
-		} else {
-			gp.logger.Debug("pods found", zap.Any("length", len(podMetricsList.Items)))
-			for _, val := range podMetricsList.Items {
-				p, _ := resource.ParseQuantity("0m")
-				for _, container := range val.Containers {
-					p.Add(container.Usage["cpu"])
-				}
-				if value, ok := gp.podFSVCMap.Load(val.ObjectMeta.Name); ok {
-					if valArray, ok1 := value.([]interface{}); ok1 {
-						function, address := valArray[0], valArray[1]
-						gp.fsCache.SetCPUUtilizaton(function.(string), address.(string), p)
-						gp.logger.Info(fmt.Sprintf("updated function %s, address %s, cpuUsage %+v", function.(string), address.(string), p))
-					}
+			return
+		}
+		gp.logger.Debug("pods found", zap.Any("length", len(podMetricsList.Items)))
+		for _, val := range podMetricsList.Items {
+			p, _ := resource.ParseQuantity("0m")
+			for _, container := range val.Containers {
+				p.Add(container.Usage["cpu"])
+			}
+			if value, ok := gp.podFSVCMap.Load(val.ObjectMeta.Name); ok {
+				if valArray, ok1 := value.([]interface{}); ok1 {
+					function, address := valArray[0], valArray[1]
+					gp.fsCache.SetCPUUtilizaton(function.(string), address.(string), p)
+					gp.logger.Info(fmt.Sprintf("updated function %s, address %s, cpuUsage %+v", function.(string), address.(string), p))
 				}
 			}
 		}
+	}
 
-		time.Sleep(30 * time.Second)
+	for {
+		if metricsApiAvailabe {
+			serviceFunc()
+		} else {
+			if gp.checkMetricsApi() {
+				metricsApiAvailabe = true
+				checkDuration = 30
+			}
+		}
+		time.Sleep(time.Duration(checkDuration) * time.Second)
 	}
 }
 
@@ -223,7 +249,7 @@ func (gp *GenericPool) choosePod(newLabels map[string]string) (string, *apiv1.Po
 		key = item.(string)
 		gp.logger.Debug("got key from the queue", zap.String("key", key))
 
-		obj, exists, err := gp.readyPodIndexer.GetByKey(key)
+		obj, exists, err := gp.readyPodInformer.GetIndexer().GetByKey(key)
 		if err != nil {
 			gp.logger.Error("fetching object from store failed", zap.String("key", key), zap.Error(err))
 			return "", nil, err
@@ -688,11 +714,7 @@ func (gp *GenericPool) getFuncSvc(ctx context.Context, fn *fv1.Function) (*fscac
 		Atime:             time.Now(),
 	}
 
-	if gp.fsCache.PodToFsvc == nil {
-		gp.fsCache.PodToFsvc = make(map[string]*fscache.FuncSvc)
-	}
-	gp.fsCache.PodToFsvc[pod.GetObjectMeta().GetName()] = fsvc
-
+	gp.fsCache.PodToFsvc.Store(pod.GetObjectMeta().GetName(), fsvc)
 	gp.podFSVCMap.Store(pod.ObjectMeta.Name, []interface{}{crd.CacheKey(fsvc.Function), fsvc.Address})
 	gp.fsCache.AddFunc(*fsvc)
 

@@ -129,7 +129,7 @@ func createEnvironmentFromCmd(input cli.Input) (*fv1.Environment, error) {
 
 	poolsize := input.Int(flagkey.EnvPoolsize)
 	if poolsize < 1 {
-		console.Warn("poolsize is not positive, if you are using pool manager please set postive value")
+		console.Warn("poolsize is not positive, if you are using pool manager please set positive value")
 	}
 
 	envBuilderImg := input.String(flagkey.EnvBuilderImage)
@@ -179,6 +179,10 @@ func createEnvironmentFromCmd(input cli.Input) (*fv1.Environment, error) {
 		},
 	}
 
+	err = util.ApplyLabelsAndAnnotations(input, &env.ObjectMeta)
+	if err != nil {
+		return nil, err
+	}
 	err = env.Validate()
 	if err != nil {
 		return nil, fv1.AggregateValidationErrors("Environment", err)
