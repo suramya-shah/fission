@@ -96,7 +96,7 @@ FISSION_IMGS := fission-bundle-multiarch-img \
 local-images:
 	PLATFORMS=linux/amd64 $(MAKE) all-images
 
-all-images: verify-builder $(FISSION_IMGS)
+all-images: # verify-builder $(FISSION_IMGS)
 
 fission-bundle-multiarch-img: cmd/fission-bundle/Dockerfile.fission-bundle
 fetcher-multiarch-img: cmd/fetcher/Dockerfile.fission-fetcher
