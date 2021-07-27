@@ -90,8 +90,8 @@ FISSION_IMGS := fission-bundle-multiarch-img \
 	pre-upgrade-checks-multiarch-img \
 	reporter-multiarch-img
 
-verify-builder:
-	@./hack/buildx.sh $(PLATFORMS)
+#verify-builder:
+#	@./hack/buildx.sh $(PLATFORMS)
 
 local-images:
 	PLATFORMS=linux/amd64 $(MAKE) all-images
