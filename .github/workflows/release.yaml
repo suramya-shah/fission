@@ -16,13 +16,15 @@ jobs:
       - name: Set env
         run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}">>$GITHUB_ENV          
       - name: run release
-        run:  make release VERSION=$RELEASE_VERSION
+        run: |
+          make local-images
+          make release VERSION=$RELEASE_VERSION 
       - name: release
         uses: actions/create-release@v1
         id: create_release
         with:
-          draft: false
-          prerelease: false
+          draft: true
+          prerelease: true
           release_name: "$RELEASE_VERSION"
           tag_name: "$RELEASE_VERSION"
           body_path: CHANGELOG.md
