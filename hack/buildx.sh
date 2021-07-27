@@ -17,6 +17,6 @@ check_platform() {
 
 PLATFORMS=$(echo "$@" | tr ',' '\n')
 create_docker_builder
-for platform in "$@"; do
+for platform in "$PLATFORMS[@]"; do
     check_platform $platform
 done
