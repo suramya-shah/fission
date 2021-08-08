@@ -6,6 +6,9 @@ set -e
 DIR=/
 BUILDDIR=/build
 echo "$GITHUB_TOKEN">>"$HOME"/.github-token
+cd ..
+git clone 'git@github.com:suramya-shah/fission-charts.git'
+cd fission
 artifacts=()
 source test/init_tools.sh
 
