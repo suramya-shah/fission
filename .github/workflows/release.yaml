@@ -39,3 +39,5 @@ jobs:
           asset_path: "$BUILDDIR/bin/fission-$version-linux-amd64"
           asset_name: Artifact for linux amd64 cli
           asset_content_type: application/gzip
+
+
