@@ -147,7 +147,7 @@ release_environment_check() {
 
 build_charts() {
     local version=$1
-    mkdir -p "$BUILDDIR"/charts
+    sudo mkdir -p "$BUILDDIR"/charts
     pushd "$DIR"/charts
     find . -iname *.~?~ | xargs -r rm
     for c in fission-all fission-core; do
