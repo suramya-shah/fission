@@ -5,7 +5,7 @@ set -e
 
 DIR=/
 BUILDDIR=/build
-
+echo "$GITHUB_TOKEN">>"$HOME"/.github-token
 artifacts=()
 source test/init_tools.sh
 
