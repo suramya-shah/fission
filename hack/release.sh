@@ -7,7 +7,7 @@ DIR=/
 BUILDDIR=/build
 
 artifacts=()
-source /test/init_tools.sh
+source test/init_tools.sh
 
 doit() {
     echo "! $*"
