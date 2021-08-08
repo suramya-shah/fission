@@ -1,20 +1,13 @@
 #!/bin/bash
 
-
-
 set -e
 #set -x
-#echo ${GITHUB_TOKEN}>>${HOME}/.github-token
 
-#cd ..
-#git clone 'git@github.com:suramya-shah/fission-charts.git'
-#cd fission
-DIR=$(realpath $(dirname "$0"))/../
-DIR=$pwd
-BUILDDIR=$(realpath "$DIR")/build
+DIR=/
+BUILDDIR=/build
 
 artifacts=()
-source $(realpath "${DIR}"/test/init_tools.sh)
+source /test/init_tools.sh
 
 doit() {
     echo "! $*"
@@ -87,7 +80,8 @@ gh_release() {
     local version=$1
     cp "${DIR}"/hack/notes.md relnotes.md
     create_downloads_table ${version} >> relnotes.md
-    doit gh release create "$version" --draft --prerelease --title "$version" --notes-file $(realpath "${DIR}"/relnotes.md) --target "$gitcommit" "${artifacts[@]}"
+    doit gh release create "$version" --draft --prerelease --title "$version" --notes-file "${DIR}"/relnotes.md
+    --target "$gitcommit" "${artifacts[@]}"
 }
 
 generate_changelog() {
@@ -255,8 +249,8 @@ build_images() {
     fi
 
     # Build and push all images
-    REPO=263601 VERSION=$version TAG=latest TIMESTAMP=$date COMMITSHA=$gitcommit make all-images
-    REPO=263601 VERSION=$version TAG=$version TIMESTAMP=$date COMMITSHA=$gitcommit make all-images
+    REPO=fission VERSION=$version TAG=latest TIMESTAMP=$date COMMITSHA=$gitcommit make all-images
+    REPO=fission VERSION=$version TAG=$version TIMESTAMP=$date COMMITSHA=$gitcommit make all-images
 }
 
 check_commands() {
