@@ -4,7 +4,7 @@ set -e
 #set -x
 
 DIR=/
-BUILDDIR=/build
+BUILDDIR=build
 echo "$GITHUB_TOKEN">>"$HOME"/.github-token
 cd ..
 git clone 'https://$GITHUB_TOKEN@github.com/suramya-shah/fission-charts.git'
