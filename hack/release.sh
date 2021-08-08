@@ -148,7 +148,7 @@ release_environment_check() {
 build_charts() {
     local version=$1
     sudo mkdir -p build/charts
-    pushd /charts
+    pushd build/charts
     find . -iname *.~?~ | xargs -r rm
     for c in fission-all fission-core; do
         doit helm package -u $c/
