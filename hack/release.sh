@@ -275,7 +275,7 @@ gitcommit=$(git rev-parse HEAD)
 
 chartsrepo=$2
 if [ -z "$chartsrepo" ]; then
-    chartsrepo="$DIR../fission-charts"
+    chartsrepo="../fission-charts"
 fi
 
 check_commands
