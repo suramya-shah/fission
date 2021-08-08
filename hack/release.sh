@@ -259,7 +259,6 @@ check_commands() {
     fi
 }
 
-export GITHUB_TOKEN=$(cat ~/.github-token)
 
 version=$1
 if [ -z "$version" ]; then
