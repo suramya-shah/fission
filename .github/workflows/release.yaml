@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/release
+      - release-1.14.1
   workflow_dispatch:
 jobs:
   build_release:
