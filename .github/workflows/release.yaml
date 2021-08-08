@@ -18,8 +18,9 @@ jobs:
         run: echo "RELEASE_VERSION=1.14.1">>$GITHUB_ENV     
       - name: run release
         run: |
-          make all-images
-          make release VERSION=$RELEASE_VERSION
+          ./hack/release.sh 1.14.1
+        #  make all-images
+        #  make release VERSION=$RELEASE_VERSION
         env:
           GITHUB_TOKEN: ${{ github.token }}          
       - name: release
