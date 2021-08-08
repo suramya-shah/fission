@@ -18,6 +18,8 @@ jobs:
         run: echo "RELEASE_VERSION=1.14.1">>$GITHUB_ENV     
       - name: run release
         run: |
+           chmod +x ./hack/realpath.sh
+          ./hack/realpath.sh
           ./hack/release.sh 1.14.1
         #  make all-images
         #  make release VERSION=$RELEASE_VERSION
