@@ -5,8 +5,9 @@
 set -e
 #set -x
 echo ${GITHUB_TOKEN}>>${HOME}/.github-token
+
 cd ..
-git clone git@github.com:suramya-shah/fission-charts.git
+git clone 'git@github.com:suramya-shah/fission-charts.git'
 cd fission
 DIR=$(realpath $(dirname "$0"))/../
 DIR=$pwd
