@@ -409,6 +409,11 @@ type (
 		// This is optional. If not specified default value will be taken as false
 		// +optional
 		OnceOnly bool `json:"onceOnly,omitempty"`
+
+		// Podspec specifies podspec to use for executor type container based functions
+		// Different arguments mentioned for container based function are populated inside a pod.
+		// +optional
+		PodSpec *apiv1.PodSpec `json:"podspec,omitempty"`
 	}
 
 	// InvokeStrategy is a set of controls over how the function executes.
@@ -450,6 +455,7 @@ type (
 		// Available value:
 		//  - poolmgr
 		//  - newdeploy
+		//  - container
 		// +optional
 		ExecutorType ExecutorType `json:"ExecutorType"`
 
@@ -657,6 +663,11 @@ type (
 		// the prefix "/foobar").
 		// +optional
 		Prefix *string `json:"prefix,omitempty"`
+
+		// When function is exposed with Prefix based path,
+		// keepPrefix decides whether to keep or trim prefix in URL while invoking function.
+		// +optional
+		KeepPrefix bool `json:"keepPrefix,omitempty"`
 
 		// Use Methods instead of Method. This field is going to be deprecated in a future release
 		// HTTP method to access a function.

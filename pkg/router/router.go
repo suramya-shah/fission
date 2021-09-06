@@ -43,6 +43,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"strconv"
 	"strings"
@@ -52,18 +53,20 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opencensus.io/plugin/ochttp"
 	"go.opencensus.io/trace"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 
 	"github.com/fission/fission/pkg/crd"
 	executorClient "github.com/fission/fission/pkg/executor/client"
 	"github.com/fission/fission/pkg/throttler"
+	otelUtils "github.com/fission/fission/pkg/utils/otel"
 )
 
 // request url ---[mux]---> Function(name,uid) ----[fmap]----> k8s service url
 
 // request url ---[trigger]---> Function(name, deployment) ----[deployment]----> Function(name, uid) ----[pool mgr]---> k8s service url
 
-func router(ctx context.Context, logger *zap.Logger, httpTriggerSet *HTTPTriggerSet, resolver *functionReferenceResolver) *mutableRouter {
+func router(ctx context.Context, logger *zap.Logger, httpTriggerSet *HTTPTriggerSet) *mutableRouter {
 	var mr *mutableRouter
 
 	// see issue https://github.com/fission/fission/issues/1317
@@ -74,38 +77,43 @@ func router(ctx context.Context, logger *zap.Logger, httpTriggerSet *HTTPTrigger
 		mr = newMutableRouter(logger, mux.NewRouter())
 	}
 
-	httpTriggerSet.subscribeRouter(ctx, mr, resolver)
+	httpTriggerSet.subscribeRouter(ctx, mr)
 	return mr
 }
 
 func serve(ctx context.Context, logger *zap.Logger, port int, tracingSamplingRate float64,
-	httpTriggerSet *HTTPTriggerSet, resolver *functionReferenceResolver, displayAccessLog bool) {
-	mr := router(ctx, logger, httpTriggerSet, resolver)
+	httpTriggerSet *HTTPTriggerSet, displayAccessLog bool, openTracingEnabled bool) {
+	mr := router(ctx, logger, httpTriggerSet)
 	url := fmt.Sprintf(":%v", port)
 
-	err := http.ListenAndServe(url, &ochttp.Handler{
-		Handler: mr,
-		GetStartOptions: func(r *http.Request) trace.StartOptions {
-			// do not trace router healthz endpoint
-			if strings.Compare(r.URL.Path, "/router-healthz") == 0 {
-				return trace.StartOptions{
-					Sampler: trace.NeverSample(),
+	var err error
+	if openTracingEnabled {
+		err = http.ListenAndServe(url, &ochttp.Handler{
+			Handler: mr,
+			GetStartOptions: func(r *http.Request) trace.StartOptions {
+				// do not trace router healthz endpoint
+				if strings.Compare(r.URL.Path, "/router-healthz") == 0 {
+					return trace.StartOptions{
+						Sampler: trace.NeverSample(),
+					}
 				}
-			}
-			if displayAccessLog {
-				logger.Info("path", zap.String("path", r.URL.Path),
-					zap.String("method", r.Method), zap.Any("header", r.Header))
-			}
-			return trace.StartOptions{
-				Sampler: trace.ProbabilitySampler(tracingSamplingRate),
-			}
-		},
-	})
+				if displayAccessLog {
+					reqMsg, err := httputil.DumpRequest(r, false)
+					if err != nil {
+						logger.Error("error dumping request", zap.Error(err))
+					}
+					logger.Info("request dump", zap.String("request", string(reqMsg)))
+				}
+				return trace.StartOptions{
+					Sampler: trace.ProbabilitySampler(tracingSamplingRate),
+				}
+			},
+		})
+	} else {
+		err = http.ListenAndServe(url, otelUtils.GetHandlerWithOTEL(mr, "fission-router", otelUtils.UrlsToIgnore("/router-healthz")))
+	}
 	if err != nil {
-		logger.Error(
-			"HTTP server error",
-			zap.Error(err),
-		)
+		logger.Error("HTTP server error", zap.Error(err))
 	}
 }
 
@@ -118,7 +126,7 @@ func serveMetric(logger *zap.Logger) {
 }
 
 // Start starts a router
-func Start(logger *zap.Logger, port int, executorURL string) {
+func Start(logger *zap.Logger, port int, executorURL string, openTracingEnabled bool) {
 	fmap := makeFunctionServiceMap(logger, time.Minute)
 
 	fissionClient, kubeClient, _, _, err := crd.MakeFissionClient()
@@ -236,7 +244,7 @@ func Start(logger *zap.Logger, port int, executorURL string) {
 			zap.Bool("default", displayAccessLog))
 	}
 
-	triggers, _, fnStore := makeHTTPTriggerSet(logger.Named("triggerset"), fmap, fissionClient, kubeClient, executor, fissionClient.CoreV1().RESTClient(), &tsRoundTripperParams{
+	triggers := makeHTTPTriggerSet(logger.Named("triggerset"), fmap, fissionClient, kubeClient, executor, &tsRoundTripperParams{
 		timeout:           timeout,
 		timeoutExponent:   timeoutExponent,
 		disableKeepAlive:  disableKeepAlive,
@@ -245,12 +253,15 @@ func Start(logger *zap.Logger, port int, executorURL string) {
 		svcAddrRetryCount: svcAddrRetryCount,
 	}, isDebugEnv, unTapServiceTimeout, throttler.MakeThrottler(svcAddrUpdateTimeout))
 
-	resolver := makeFunctionReferenceResolver(fnStore)
-
 	go serveMetric(logger)
 
 	logger.Info("starting router", zap.Int("port", port))
-	ctx, cancel := context.WithCancel(context.Background())
+
+	tracer := otel.Tracer("router")
+	ctx, span := tracer.Start(context.Background(), "router/Start")
+	defer span.End()
+
+	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
-	serve(ctx, logger, port, tracingSamplingRate, triggers, resolver, displayAccessLog)
+	serve(ctxWithCancel, logger, port, tracingSamplingRate, triggers, displayAccessLog, openTracingEnabled)
 }

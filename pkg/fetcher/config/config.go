@@ -125,8 +125,9 @@ func (cfg *Config) NewSpecializeRequest(fn *fv1.Function, env *fv1.Environment) 
 		FetchReq: fetcher.FunctionFetchRequest{
 			FetchType: fv1.FETCH_DEPLOYMENT,
 			Package: metav1.ObjectMeta{
-				Namespace: fn.Spec.Package.PackageRef.Namespace,
-				Name:      fn.Spec.Package.PackageRef.Name,
+				Namespace:       fn.Spec.Package.PackageRef.Namespace,
+				Name:            fn.Spec.Package.PackageRef.Name,
+				ResourceVersion: fn.Spec.Package.PackageRef.ResourceVersion,
 			},
 			Filename:    targetFilename,
 			Secrets:     fn.Spec.Secrets,
@@ -280,6 +281,16 @@ func (cfg *Config) addFetcherToPodSpecWithCommand(podSpec *apiv1.PodSpec, mainCo
 						IntVal: 8000,
 					},
 				},
+			},
+		},
+		Env: []apiv1.EnvVar{
+			{
+				Name:  "OPENTRACING_ENABLED",
+				Value: os.Getenv("OPENTRACING_ENABLED"),
+			},
+			{
+				Name:  "OTEL_COLLECTOR_ENDPOINT",
+				Value: os.Getenv("OTEL_COLLECTOR_ENDPOINT"),
 			},
 		},
 	}

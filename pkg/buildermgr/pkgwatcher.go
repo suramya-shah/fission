@@ -25,7 +25,6 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	k8sCache "k8s.io/client-go/tools/cache"
 
@@ -40,26 +39,26 @@ type (
 		logger           *zap.Logger
 		fissionClient    *crd.FissionClient
 		k8sClient        *kubernetes.Clientset
-		podStore         k8sCache.Store
-		pkgStore         k8sCache.Store
+		podInformer      *k8sCache.SharedIndexInformer
+		pkgInformer      *k8sCache.SharedIndexInformer
 		builderNamespace string
 		storageSvcUrl    string
+		buildCache       *cache.Cache
 	}
 )
 
 func makePackageWatcher(logger *zap.Logger, fissionClient *crd.FissionClient, k8sClientSet *kubernetes.Clientset,
-	builderNamespace string, storageSvcUrl string) *packageWatcher {
-	lw := k8sCache.NewListWatchFromClient(k8sClientSet.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.Everything())
-	store, controller := k8sCache.NewInformer(lw, &apiv1.Pod{}, 30*time.Second, k8sCache.ResourceEventHandlerFuncs{})
-	go controller.Run(make(chan struct{}))
-
+	builderNamespace string, storageSvcUrl string, podInformer *k8sCache.SharedIndexInformer,
+	pkgInformer *k8sCache.SharedIndexInformer) *packageWatcher {
 	pkgw := &packageWatcher{
 		logger:           logger.Named("package_watcher"),
 		fissionClient:    fissionClient,
 		k8sClient:        k8sClientSet,
-		podStore:         store,
+		podInformer:      podInformer,
+		pkgInformer:      pkgInformer,
 		builderNamespace: builderNamespace,
 		storageSvcUrl:    storageSvcUrl,
+		buildCache:       cache.MakeCache(0, 0),
 	}
 	return pkgw
 }
@@ -74,15 +73,15 @@ func makePackageWatcher(logger *zap.Logger, fissionClient *crd.FissionClient, k8
 // 5. Update package resource in package ref of functions that share the same package
 // 6. Update package status to succeed state
 // *. Update package status to failed state,if any one of steps above failed/time out
-func (pkgw *packageWatcher) build(buildCache *cache.Cache, srcpkg *fv1.Package) {
+func (pkgw *packageWatcher) build(ctx context.Context, srcpkg *fv1.Package) {
 	// Ignore duplicate build requests
 	key := fmt.Sprintf("%v-%v", srcpkg.ObjectMeta.Name, srcpkg.ObjectMeta.ResourceVersion)
-	_, err := buildCache.Set(key, srcpkg)
+	_, err := pkgw.buildCache.Set(key, srcpkg)
 	if err != nil {
 		return
 	}
 	defer func() {
-		err := buildCache.Delete(key)
+		err := pkgw.buildCache.Delete(key)
 		if err != nil {
 			pkgw.logger.Error("error deleting key from cache", zap.String("key", key), zap.Error(err))
 		}
@@ -96,7 +95,7 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, srcpkg *fv1.Package) 
 		return
 	}
 
-	env, err := pkgw.fissionClient.CoreV1().Environments(pkg.Spec.Environment.Namespace).Get(context.TODO(), pkg.Spec.Environment.Name, metav1.GetOptions{})
+	env, err := pkgw.fissionClient.CoreV1().Environments(pkg.Spec.Environment.Namespace).Get(ctx, pkg.Spec.Environment.Name, metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
 		e := "environment does not exist"
 		pkgw.logger.Error(e, zap.String("environment", pkg.Spec.Environment.Name))
@@ -122,7 +121,7 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, srcpkg *fv1.Package) 
 	for healthCheckBackOff.NextExists() {
 		// Informer store is not able to use label to find the pod,
 		// iterate all available environment builders.
-		items := pkgw.podStore.List()
+		items := (*pkgw.podInformer).GetStore().List()
 		if err != nil {
 			pkgw.logger.Error("error retrieving pod information for environment", zap.Error(err), zap.String("environment", env.ObjectMeta.Name))
 			return
@@ -168,7 +167,7 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, srcpkg *fv1.Package) 
 			// Add the package getter rolebinding to builder sa
 			// we continue here if role binding was not setup successfully. this is because without this, the fetcher wont be able to fetch the source pkg into the container and
 			// the build will fail eventually
-			err := utils.SetupRoleBinding(pkgw.logger, pkgw.k8sClient, fv1.PackageGetterRB, pkg.ObjectMeta.Namespace, fv1.PackageGetterCR, fv1.ClusterRole, fv1.FissionBuilderSA, builderNs)
+			err := utils.SetupRoleBinding(ctx, pkgw.logger, pkgw.k8sClient, fv1.PackageGetterRB, pkg.ObjectMeta.Namespace, fv1.PackageGetterCR, fv1.ClusterRole, fv1.FissionBuilderSA, builderNs)
 			if err != nil {
 				pkgw.logger.Error("error setting up role binding for package",
 					zap.Error(err),
@@ -182,7 +181,6 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, srcpkg *fv1.Package) 
 					zap.String("package", fmt.Sprintf("%s.%s", pkg.ObjectMeta.Name, pkg.ObjectMeta.Namespace)))
 			}
 
-			ctx := context.Background()
 			uploadResp, buildLogs, err := buildPackage(ctx, pkgw.logger, pkgw.fissionClient, builderNs, pkgw.storageSvcUrl, pkg)
 			if err != nil {
 				pkgw.logger.Error("error building package", zap.Error(err), zap.String("package_name", pkg.ObjectMeta.Name))
@@ -201,7 +199,7 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, srcpkg *fv1.Package) 
 			pkgw.logger.Info("starting package info update", zap.String("package_name", pkg.ObjectMeta.Name))
 
 			fnList, err := pkgw.fissionClient.CoreV1().
-				Functions(metav1.NamespaceAll).List(context.TODO(), metav1.ListOptions{})
+				Functions(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
 			if err != nil {
 				e := "error getting function list"
 				pkgw.logger.Error(e, zap.Error(err))
@@ -225,7 +223,7 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, srcpkg *fv1.Package) 
 					fn.Spec.Package.PackageRef.ResourceVersion != pkg.ObjectMeta.ResourceVersion {
 					fn.Spec.Package.PackageRef.ResourceVersion = pkg.ObjectMeta.ResourceVersion
 					// update CRD
-					_, err = pkgw.fissionClient.CoreV1().Functions(fn.ObjectMeta.Namespace).Update(context.TODO(), &fn, metav1.UpdateOptions{})
+					_, err = pkgw.fissionClient.CoreV1().Functions(fn.ObjectMeta.Namespace).Update(ctx, &fn, metav1.UpdateOptions{})
 					if err != nil {
 						e := "error updating function package resource version"
 						pkgw.logger.Error(e, zap.Error(err))
@@ -281,10 +279,7 @@ func (pkgw *packageWatcher) build(buildCache *cache.Cache, srcpkg *fv1.Package) 
 		zap.String("package", fmt.Sprintf("%s.%s", pkg.ObjectMeta.Name, pkg.ObjectMeta.Namespace)))
 }
 
-func (pkgw *packageWatcher) watchPackages() {
-	buildCache := cache.MakeCache(0, 0)
-	lw := k8sCache.NewListWatchFromClient(pkgw.fissionClient.CoreV1().RESTClient(), "packages", apiv1.NamespaceAll, fields.Everything())
-
+func (pkgw *packageWatcher) packageInformerHandler() k8sCache.ResourceEventHandlerFuncs {
 	processPkg := func(pkg *fv1.Package) {
 		var err error
 
@@ -298,14 +293,13 @@ func (pkgw *packageWatcher) watchPackages() {
 			// don't need to build the package at this moment.
 			return
 		}
-
 		// Only build pending state packages.
 		if pkg.Status.BuildStatus == fv1.BuildStatusPending {
-			go pkgw.build(buildCache, pkg)
+			ctx := context.Background()
+			go pkgw.build(ctx, pkg)
 		}
 	}
-
-	pkgStore, controller := k8sCache.NewInformer(lw, &fv1.Package{}, 60*time.Minute, k8sCache.ResourceEventHandlerFuncs{
+	return k8sCache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			pkg := obj.(*fv1.Package)
 			processPkg(pkg)
@@ -325,10 +319,14 @@ func (pkgw *packageWatcher) watchPackages() {
 			}
 			processPkg(pkg)
 		},
-	})
+	}
+}
 
-	pkgw.pkgStore = pkgStore
-	controller.Run(make(chan struct{}))
+func (pkgw *packageWatcher) Run() {
+	context := context.Background()
+	go (*pkgw.podInformer).Run(context.Done())
+	(*pkgw.pkgInformer).AddEventHandler(pkgw.packageInformerHandler())
+	(*pkgw.pkgInformer).Run(context.Done())
 }
 
 // setInitialBuildStatus sets initial build status to a package if it is empty.

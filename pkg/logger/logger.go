@@ -25,16 +25,14 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/client-go/kubernetes"
+	k8sInformers "k8s.io/client-go/informers"
 	k8sCache "k8s.io/client-go/tools/cache"
 
 	fv1 "github.com/fission/fission/pkg/apis/core/v1"
 	"github.com/fission/fission/pkg/crd"
 	"github.com/fission/fission/pkg/utils"
+	"github.com/fission/fission/pkg/utils/loggerfactory"
 )
 
 var nodeName = os.Getenv("NODE_NAME")
@@ -44,40 +42,36 @@ const (
 	fissionSymlinkPath       = "/var/log/fission"
 )
 
-func makePodLoggerController(zapLogger *zap.Logger, k8sClientSet *kubernetes.Clientset) k8sCache.Controller {
-	resyncPeriod := 30 * time.Second
-	lw := k8sCache.NewListWatchFromClient(k8sClientSet.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.Everything())
-	_, controller := k8sCache.NewInformer(lw, &corev1.Pod{}, resyncPeriod,
-		k8sCache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				pod := obj.(*corev1.Pod)
-				if !isValidFunctionPodOnNode(pod) || !utils.IsReadyPod(pod) {
-					return
-				}
-				err := createLogSymlinks(zapLogger, pod)
-				if err != nil {
-					funcName := pod.Labels[fv1.FUNCTION_NAME]
-					zapLogger.Error("error creating symlink",
-						zap.String("function", funcName), zap.Error(err))
-				}
-			},
-			UpdateFunc: func(_, obj interface{}) {
-				pod := obj.(*corev1.Pod)
-				if !isValidFunctionPodOnNode(pod) || !utils.IsReadyPod(pod) {
-					return
-				}
-				err := createLogSymlinks(zapLogger, pod)
-				if err != nil {
-					funcName := pod.Labels[fv1.FUNCTION_NAME]
-					zapLogger.Error("error creating symlink",
-						zap.String("function", funcName), zap.Error(err))
-				}
-			},
-			DeleteFunc: func(obj interface{}) {
-				// Do nothing here, let symlink reaper to recycle orphan symlink file
-			},
-		})
-	return controller
+func podInformerHandlers(zapLogger *zap.Logger) k8sCache.ResourceEventHandler {
+	return k8sCache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			pod := obj.(*corev1.Pod)
+			if !isValidFunctionPodOnNode(pod) || !utils.IsReadyPod(pod) {
+				return
+			}
+			err := createLogSymlinks(zapLogger, pod)
+			if err != nil {
+				funcName := pod.Labels[fv1.FUNCTION_NAME]
+				zapLogger.Error("error creating symlink",
+					zap.String("function", funcName), zap.Error(err))
+			}
+		},
+		UpdateFunc: func(_, obj interface{}) {
+			pod := obj.(*corev1.Pod)
+			if !isValidFunctionPodOnNode(pod) || !utils.IsReadyPod(pod) {
+				return
+			}
+			err := createLogSymlinks(zapLogger, pod)
+			if err != nil {
+				funcName := pod.Labels[fv1.FUNCTION_NAME]
+				zapLogger.Error("error creating symlink",
+					zap.String("function", funcName), zap.Error(err))
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			// Do nothing here, let symlink reaper to recycle orphan symlink file
+		},
+	}
 }
 
 func createLogSymlinks(zapLogger *zap.Logger, pod *corev1.Pod) error {
@@ -164,34 +158,25 @@ func symlinkReaper(zapLogger *zap.Logger) {
 }
 
 func Start() {
-	config := zap.NewProductionConfig()
-	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	zapLogger, err := config.Build()
-	if err != nil {
-		log.Fatalf("can't initialize zap logger: %v", err)
-	}
-
-	defer func() {
-		err := zapLogger.Sync()
-		if err != nil {
-			log.Fatalf("failed to sync zap logger: %v", err)
-		}
-	}()
+	logger := loggerfactory.GetLogger()
+	defer logger.Sync()
 
 	if _, err := os.Stat(fissionSymlinkPath); os.IsNotExist(err) {
-		zapLogger.Info("symlink path not exist, create it",
+		logger.Info("symlink path not exist, create it",
 			zap.String("fissionSymlinkPath", fissionSymlinkPath))
 		err = os.Mkdir(fissionSymlinkPath, 0755)
 		if err != nil {
-			zapLogger.Fatal("error creating fissionSymlinkPath", zap.Error(err))
+			logger.Fatal("error creating fissionSymlinkPath", zap.Error(err))
 		}
 	}
-	go symlinkReaper(zapLogger)
+	go symlinkReaper(logger)
 	_, kubernetesClient, _, _, err := crd.MakeFissionClient()
 	if err != nil {
 		log.Fatalf("Error starting pod watcher: %v", err)
 	}
-	controller := makePodLoggerController(zapLogger, kubernetesClient)
-	controller.Run(make(chan struct{}))
-	zapLogger.Fatal("Stop watching pod changes")
+	informerFactory := k8sInformers.NewSharedInformerFactory(kubernetesClient, time.Minute*30)
+	podInformer := informerFactory.Core().V1().Pods().Informer()
+	podInformer.AddEventHandler(podInformerHandlers(logger))
+	podInformer.Run(make(chan struct{}))
+	logger.Fatal("Stop watching pod changes")
 }
