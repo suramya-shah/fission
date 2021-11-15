@@ -17,9 +17,8 @@ limitations under the License.
 package controller
 
 import (
-	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/emicklei/go-restful"
@@ -28,6 +27,7 @@ import (
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	fv1 "github.com/fission/fission/pkg/apis/core/v1"
 	ferror "github.com/fission/fission/pkg/error"
@@ -106,7 +106,7 @@ func (a *API) EnvironmentApiList(w http.ResponseWriter, r *http.Request) {
 		ns = metav1.NamespaceAll
 	}
 
-	envs, err := a.fissionClient.CoreV1().Environments(ns).List(context.TODO(), metav1.ListOptions{})
+	envs, err := a.fissionClient.CoreV1().Environments(ns).List(r.Context(), metav1.ListOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -122,7 +122,7 @@ func (a *API) EnvironmentApiList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) EnvironmentApiCreate(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -137,13 +137,13 @@ func (a *API) EnvironmentApiCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check if namespace exists, if not create it.
-	err = a.createNsIfNotExists(env.ObjectMeta.Namespace)
+	err = a.createNsIfNotExists(r.Context(), env.ObjectMeta.Namespace)
 	if err != nil {
 		a.respondWithError(w, err)
 		return
 	}
 
-	enew, err := a.fissionClient.CoreV1().Environments(env.ObjectMeta.Namespace).Create(context.TODO(), &env, metav1.CreateOptions{})
+	enew, err := a.fissionClient.CoreV1().Environments(env.ObjectMeta.Namespace).Create(r.Context(), &env, metav1.CreateOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -168,7 +168,7 @@ func (a *API) EnvironmentApiGet(w http.ResponseWriter, r *http.Request) {
 		ns = metav1.NamespaceDefault
 	}
 
-	env, err := a.fissionClient.CoreV1().Environments(ns).Get(context.TODO(), name, metav1.GetOptions{})
+	env, err := a.fissionClient.CoreV1().Environments(ns).Get(r.Context(), name, metav1.GetOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -187,7 +187,7 @@ func (a *API) EnvironmentApiUpdate(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	name := vars["environment"]
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -206,7 +206,7 @@ func (a *API) EnvironmentApiUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	enew, err := a.fissionClient.CoreV1().Environments(env.ObjectMeta.Namespace).Update(context.TODO(), &env, metav1.UpdateOptions{})
+	enew, err := a.fissionClient.CoreV1().Environments(env.ObjectMeta.Namespace).Update(r.Context(), &env, metav1.UpdateOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -230,11 +230,52 @@ func (a *API) EnvironmentApiDelete(w http.ResponseWriter, r *http.Request) {
 		ns = metav1.NamespaceDefault
 	}
 
-	err := a.fissionClient.CoreV1().Environments(ns).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	err := a.fissionClient.CoreV1().Environments(ns).Delete(r.Context(), name, metav1.DeleteOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
 	}
 
 	a.respondWithSuccess(w, []byte(""))
+}
+
+// EnvironmentApiPodList: Get list of pods currently available in environment
+func (a *API) EnvironmentApiPodList(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	envName, ok := vars["environment"]
+	if !ok {
+		a.respondWithError(w, ferror.MakeError(http.StatusInternalServerError, "Error retrieving environment name"))
+		return
+	}
+
+	// label selector
+	selector := map[string]string{
+		fv1.ENVIRONMENT_NAME: envName,
+	}
+
+	ens := a.extractQueryParamFromRequest(r, fv1.ENVIRONMENT_NAMESPACE)
+	if len(ens) != 0 {
+		selector[fv1.ENVIRONMENT_NAMESPACE] = ens
+	}
+
+	et := a.extractQueryParamFromRequest(r, fv1.EXECUTOR_TYPE)
+	if len(et) != 0 {
+		selector[fv1.EXECUTOR_TYPE] = et
+	}
+
+	pods, err := a.kubernetesClient.CoreV1().Pods(metav1.NamespaceAll).List(r.Context(), metav1.ListOptions{
+		LabelSelector: labels.Set(selector).AsSelector().String(),
+	})
+	if err != nil {
+		a.respondWithError(w, err)
+		return
+	}
+
+	resp, err := json.Marshal(pods.Items)
+	if err != nil {
+		a.respondWithError(w, err)
+		return
+	}
+
+	a.respondWithSuccess(w, resp)
 }

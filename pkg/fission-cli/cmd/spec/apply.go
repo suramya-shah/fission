@@ -19,7 +19,6 @@ package spec
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -67,6 +66,7 @@ func (opts *ApplySubCommand) do(input cli.Input) error {
 
 func (opts *ApplySubCommand) run(input cli.Input) error {
 	specDir := util.GetSpecDir(input)
+	specIgnore := util.GetSpecIgnore(input)
 
 	deleteResources := input.Bool(flagkey.SpecDelete)
 	watchResources := input.Bool(flagkey.SpecWatch)
@@ -112,7 +112,7 @@ func (opts *ApplySubCommand) run(input cli.Input) error {
 
 	for {
 		// read all specs
-		fr, err := ReadSpecs(specDir)
+		fr, err := ReadSpecs(specDir, specIgnore)
 		if err != nil {
 			return errors.Wrap(err, "error reading specs")
 		}
@@ -487,7 +487,7 @@ func localArchiveFromSpec(specDir string, aus *spectypes.ArchiveUploadSpec) (*fv
 
 	if len(files) > 1 || !isSingleFile {
 		// zip up the file list
-		archiveFile, err := ioutil.TempFile("", fmt.Sprintf("fission-archive-%v", aus.Name))
+		archiveFile, err := os.CreateTemp("", fmt.Sprintf("fission-archive-%v", aus.Name))
 		if err != nil {
 			return nil, err
 		}

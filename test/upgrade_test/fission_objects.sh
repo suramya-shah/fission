@@ -5,7 +5,7 @@ ns="fission"
 ROOT=$(pwd)
 PREV_STABLE_VERSION=1.13.1
 HELM_VARS_PREV_RELEASE="routerServiceType=NodePort,analytics=false"
-HELM_VARS_LATEST_RELEASE="routerServiceType=NodePort,repository=docker.io/library,image=fission-bundle,pullPolicy=IfNotPresent,imageTag=latest,fetcher.image=docker.io/library/fetcher,fetcher.imageTag=latest,postInstallReportImage=reporter,preUpgradeChecksImage=preupgradechecks,analytics=false"
+HELM_VARS_LATEST_RELEASE="routerServiceType=NodePort,repository=docker.io/library,image=fission-bundle,pullPolicy=IfNotPresent,imageTag=latest,fetcher.image=docker.io/library/fetcher,fetcher.imageTag=latest,postInstallReportImage=reporter,preUpgradeChecks.image=preupgradechecks,preUpgradeChecks.imageTag=latest,analytics=false"
 
 doit() {
     echo "! $*"
@@ -82,11 +82,12 @@ test_fission_objects() {
 
 build_docker_images() {
     echo "Building new docker images"
-    doit docker build -t fission-bundle -f cmd/fission-bundle/Dockerfile.fission-bundle .
-    doit docker build -t fetcher -f cmd/fetcher/Dockerfile.fission-fetcher .
-    doit docker build -t builder -f cmd/builder/Dockerfile.fission-builder .
-    doit docker build -t reporter -f cmd/reporter/Dockerfile.reporter .
-    doit docker build -t preupgradechecks -f cmd/preupgradechecks/Dockerfile.fission-preupgradechecks .
+    make skaffold-prebuild
+    doit docker build -t fission-bundle dist/fission-bundle_linux_amd64
+    doit docker build -t fetcher dist/fetcher_linux_amd64
+    doit docker build -t builder dist/builder_linux_amd64
+    doit docker build -t reporter dist/reporter_linux_amd64
+    doit docker build -t preupgradechecks dist/pre-upgrade-checks_linux_amd64
 }
 
 kind_image_load() {
@@ -100,6 +101,7 @@ kind_image_load() {
 
 install_fission_cli() {
     echo "Installing new Fission cli"
+    doit make build-fission-cli
     doit sudo make install-fission-cli
     sudo chmod +x /usr/local/bin/fission
 }

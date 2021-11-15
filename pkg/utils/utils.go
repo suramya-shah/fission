@@ -22,7 +22,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -58,38 +57,14 @@ func GetFunctionIstioServiceName(fnName, fnNamespace string) string {
 	return fmt.Sprintf("istio-%v-%v", fnName, fnNamespace)
 }
 
-// IsReadyPod checks both all containers in a pod are ready and whether
-// the .metadata.DeletionTimestamp is nil.
-func IsReadyPod(pod *apiv1.Pod) bool {
-	// since its a utility function, just ensuring there is no nil pointer exception
-	if pod == nil {
-		return false
-	}
-
-	// pod is in "Terminating" status if deletionTimestamp is not nil
-	// https://github.com/kubernetes/kubernetes/issues/61376
-	if pod.ObjectMeta.DeletionTimestamp != nil {
-		return false
-	}
-
-	// pod does not have an IP address allocated to it yet
-	if pod.Status.PodIP == "" {
-		return false
-	}
-
-	for _, cStatus := range pod.Status.ContainerStatuses {
-		if !cStatus.Ready {
-			return false
-		}
-	}
-
-	return true
-}
-
 // GetTempDir creates and return a temporary directory
 func GetTempDir() (string, error) {
-	tmpDir := uuid.NewV4().String()
-	dir, err := ioutil.TempDir("", tmpDir)
+	id, err := uuid.NewV4()
+	if err != nil {
+		return "", err
+	}
+	tmpDir := id.String()
+	dir, err := os.MkdirTemp("", tmpDir)
 	return dir, err
 }
 

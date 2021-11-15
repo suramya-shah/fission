@@ -24,7 +24,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"sync/atomic"
 
 	"go.opencensus.io/plugin/ochttp"
@@ -40,7 +39,7 @@ var (
 	readyToServe uint32
 )
 
-func Run(logger *zap.Logger) {
+func Run(ctx context.Context, logger *zap.Logger) {
 	flag.Usage = fetcherUsage
 	collectorEndpoint := flag.String("jaeger-collector-endpoint", "", "")
 	specializeOnStart := flag.Bool("specialize-on-startup", false, "Flag to activate specialize process at pod starup")
@@ -63,12 +62,7 @@ func Run(logger *zap.Logger) {
 			}
 		}
 	}
-
-	openTracingEnabled, err := strconv.ParseBool(os.Getenv("OPENTRACING_ENABLED"))
-	if err != nil {
-		logger.Fatal("error parsing OPENTRACING_ENABLED", zap.Error(err))
-	}
-
+	openTracingEnabled := tracing.TracingEnabled(logger)
 	if openTracingEnabled {
 		go func() {
 			if err := tracing.RegisterTraceExporter(logger, *collectorEndpoint, "Fission-Fetcher"); err != nil {
@@ -76,17 +70,17 @@ func Run(logger *zap.Logger) {
 			}
 		}()
 	} else {
-		shutdown, err := otelUtils.InitProvider(logger, "Fission-Fetcher")
+		shutdown, err := otelUtils.InitProvider(ctx, logger, "Fission-Fetcher")
 		if err != nil {
 			logger.Fatal("error initializing provider for OTLP", zap.Error(err))
 		}
 		if shutdown != nil {
-			defer shutdown()
+			defer shutdown(ctx)
 		}
 	}
 
 	tracer := otel.Tracer("fetcher")
-	ctx, span := tracer.Start(context.Background(), "fetcher/Run")
+	ctx, span := tracer.Start(ctx, "fetcher/Run")
 	defer span.End()
 
 	f, err := fetcher.MakeFetcher(logger, dir, *secretDir, *configDir)

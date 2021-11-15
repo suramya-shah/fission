@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"testing"
@@ -50,7 +49,7 @@ func panicIf(err error) {
 }
 
 func MakeTestFile(size int) *os.File {
-	f, err := ioutil.TempFile("", "storagesvc_test_")
+	f, err := os.CreateTemp("", "storagesvc_test_")
 	panicIf(err)
 
 	_, err = f.Write(bytes.Repeat([]byte("."), size))
@@ -77,7 +76,7 @@ func runMinioDockerContainer(pool *dockertest.Pool) *dockertest.Resource {
 	return resource
 }
 
-func startS3StorageService(endpoint, bucketName, subDir string) {
+func startS3StorageService(ctx context.Context, endpoint, bucketName, subDir string) {
 	// testID := uniuri.NewLen(8)
 	port := 8081
 
@@ -95,7 +94,7 @@ func startS3StorageService(endpoint, bucketName, subDir string) {
 	os.Setenv("STORAGE_S3_REGION", minioRegion)
 
 	storage := storagesvc.NewS3Storage()
-	_ = storagesvc.Start(logger, storage, port, true)
+	_ = storagesvc.Start(ctx, logger, storage, port, true)
 }
 
 func TestS3StorageService(t *testing.T) {
@@ -136,7 +135,7 @@ func TestS3StorageService(t *testing.T) {
 	// Start storagesvc
 	bucketName := "test-s3-service"
 	subDir := "x/y/z"
-	startS3StorageService(endpoint, bucketName, subDir)
+	startS3StorageService(context.Background(), endpoint, bucketName, subDir)
 
 	time.Sleep(time.Second)
 	client := MakeClient(fmt.Sprintf("http://localhost:%v/", 8081))
@@ -158,7 +157,7 @@ func TestS3StorageService(t *testing.T) {
 	panicIf(err)
 	defer reader.Close()
 
-	retThroughMinio, err := ioutil.TempFile("", "storagesvc_verify_minio_")
+	retThroughMinio, err := os.CreateTemp("", "storagesvc_verify_minio_")
 	panicIf(err)
 	defer os.Remove(retThroughMinio.Name())
 
@@ -170,7 +169,7 @@ func TestS3StorageService(t *testing.T) {
 	}
 
 	// Retrieve file through API
-	retThroughAPI, err := ioutil.TempFile("", "storagesvc_verify_")
+	retThroughAPI, err := os.CreateTemp("", "storagesvc_verify_")
 	panicIf(err)
 	os.Remove(retThroughAPI.Name())
 
@@ -179,9 +178,9 @@ func TestS3StorageService(t *testing.T) {
 	defer os.Remove(retThroughAPI.Name())
 
 	// compare contents
-	contentsMinio, err := ioutil.ReadFile(retThroughMinio.Name())
+	contentsMinio, err := os.ReadFile(retThroughMinio.Name())
 	panicIf(err)
-	contentsAPI, err := ioutil.ReadFile(retThroughAPI.Name())
+	contentsAPI, err := os.ReadFile(retThroughAPI.Name())
 	panicIf(err)
 	if !bytes.Equal(contentsMinio, contentsAPI) {
 		log.Panic("Contents don't match")
@@ -212,7 +211,7 @@ func TestLocalStorageService(t *testing.T) {
 	localPath := fmt.Sprintf("/tmp/%v", testID)
 	_ = os.Mkdir(localPath, os.ModePerm)
 	storage := storagesvc.NewLocalStorage(localPath)
-	_ = storagesvc.Start(logger, storage, port, true)
+	_ = storagesvc.Start(context.Background(), logger, storage, port, true)
 
 	time.Sleep(time.Second)
 	client := MakeClient(fmt.Sprintf("http://localhost:%v/", port))
@@ -228,7 +227,7 @@ func TestLocalStorageService(t *testing.T) {
 	panicIf(err)
 
 	// make a temp file for verification
-	retrievedfile, err := ioutil.TempFile("", "storagesvc_verify_")
+	retrievedfile, err := os.CreateTemp("", "storagesvc_verify_")
 	panicIf(err)
 	os.Remove(retrievedfile.Name())
 
@@ -238,9 +237,9 @@ func TestLocalStorageService(t *testing.T) {
 	defer os.Remove(retrievedfile.Name())
 
 	// compare contents
-	contents1, err := ioutil.ReadFile(tmpfile.Name())
+	contents1, err := os.ReadFile(tmpfile.Name())
 	panicIf(err)
-	contents2, err := ioutil.ReadFile(retrievedfile.Name())
+	contents2, err := os.ReadFile(retrievedfile.Name())
 	panicIf(err)
 	if !bytes.Equal(contents1, contents2) {
 		log.Panic("Contents don't match")

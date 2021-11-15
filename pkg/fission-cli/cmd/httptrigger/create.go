@@ -70,7 +70,11 @@ func (opts *CreateSubCommand) complete(input cli.Input) error {
 	// just name triggers by uuid.
 	if len(triggerName) == 0 {
 		console.Warn(fmt.Sprintf("--%v will be soon marked as required flag, see 'help' for details", flagkey.HtName))
-		triggerName = uuid.NewV4().String()
+		id, err := uuid.NewV4()
+		if err != nil {
+			return err
+		}
+		triggerName = id.String()
 	}
 	fnNamespace := input.String(flagkey.NamespaceFunction)
 
@@ -130,7 +134,8 @@ func (opts *CreateSubCommand) complete(input cli.Input) error {
 	// For Specs, the spec validate checks for function reference
 	if input.Bool(flagkey.SpecSave) {
 		specDir := util.GetSpecDir(input)
-		fr, err := spec.ReadSpecs(specDir)
+		specIgnore := util.GetSpecIgnore(input)
+		fr, err := spec.ReadSpecs(specDir, specIgnore)
 		if err != nil {
 			return errors.Wrap(err, fmt.Sprintf("error reading spec in '%v'", specDir))
 		}

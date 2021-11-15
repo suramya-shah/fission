@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -117,7 +116,7 @@ func (a *API) FunctionApiList(w http.ResponseWriter, r *http.Request) {
 		ns = metav1.NamespaceAll
 	}
 
-	funcs, err := a.fissionClient.CoreV1().Functions(ns).List(context.TODO(), metav1.ListOptions{})
+	funcs, err := a.fissionClient.CoreV1().Functions(ns).List(r.Context(), metav1.ListOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -133,7 +132,7 @@ func (a *API) FunctionApiList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) FunctionApiCreate(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -147,13 +146,13 @@ func (a *API) FunctionApiCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check if namespace exists, if not create it.
-	err = a.createNsIfNotExists(f.ObjectMeta.Namespace)
+	err = a.createNsIfNotExists(r.Context(), f.ObjectMeta.Namespace)
 	if err != nil {
 		a.respondWithError(w, err)
 		return
 	}
 
-	fnew, err := a.fissionClient.CoreV1().Functions(f.ObjectMeta.Namespace).Create(context.TODO(), &f, metav1.CreateOptions{})
+	fnew, err := a.fissionClient.CoreV1().Functions(f.ObjectMeta.Namespace).Create(r.Context(), &f, metav1.CreateOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -177,7 +176,7 @@ func (a *API) FunctionApiGet(w http.ResponseWriter, r *http.Request) {
 		ns = metav1.NamespaceDefault
 	}
 
-	f, err := a.fissionClient.CoreV1().Functions(ns).Get(context.TODO(), name, metav1.GetOptions{})
+	f, err := a.fissionClient.CoreV1().Functions(ns).Get(r.Context(), name, metav1.GetOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -195,7 +194,7 @@ func (a *API) FunctionApiUpdate(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	name := vars["function"]
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -214,7 +213,7 @@ func (a *API) FunctionApiUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fnew, err := a.fissionClient.CoreV1().Functions(f.ObjectMeta.Namespace).Update(context.TODO(), &f, metav1.UpdateOptions{})
+	fnew, err := a.fissionClient.CoreV1().Functions(f.ObjectMeta.Namespace).Update(r.Context(), &f, metav1.UpdateOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -236,7 +235,7 @@ func (a *API) FunctionApiDelete(w http.ResponseWriter, r *http.Request) {
 		ns = metav1.NamespaceDefault
 	}
 
-	err := a.fissionClient.CoreV1().Functions(ns).Delete(context.TODO(), name, metav1.DeleteOptions{})
+	err := a.fissionClient.CoreV1().Functions(ns).Delete(r.Context(), name, metav1.DeleteOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -299,7 +298,7 @@ func (a *API) FunctionPodLogs(w http.ResponseWriter, r *http.Request) {
 		podNs = ns
 	}
 
-	f, err := a.fissionClient.CoreV1().Functions(ns).Get(context.TODO(), fnName, metav1.GetOptions{})
+	f, err := a.fissionClient.CoreV1().Functions(ns).Get(r.Context(), fnName, metav1.GetOptions{})
 	if err != nil {
 		a.respondWithError(w, err)
 		return
@@ -311,7 +310,7 @@ func (a *API) FunctionPodLogs(w http.ResponseWriter, r *http.Request) {
 		fv1.ENVIRONMENT_NAME:      f.Spec.Environment.Name,
 		fv1.ENVIRONMENT_NAMESPACE: f.Spec.Environment.Namespace,
 	}
-	podList, err := a.kubernetesClient.CoreV1().Pods(podNs).List(context.TODO(), metav1.ListOptions{
+	podList, err := a.kubernetesClient.CoreV1().Pods(podNs).List(r.Context(), metav1.ListOptions{
 		LabelSelector: labels.Set(selector).AsSelector().String(),
 	})
 	if err != nil {
@@ -368,4 +367,40 @@ func getContainerLog(kubernetesClient *kubernetes.Clientset, w http.ResponseWrit
 	}
 
 	return nil
+}
+
+// FunctionApiPodList: Get list of pods currently used by function
+func (a *API) FunctionApiPodList(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	fnName, ok := vars["function"]
+	if !ok {
+		a.respondWithError(w, ferror.MakeError(http.StatusInternalServerError, "Error retrieving function name"))
+		return
+	}
+
+	// label selector
+	selector := map[string]string{
+		fv1.FUNCTION_NAME: fnName,
+	}
+
+	fns := a.extractQueryParamFromRequest(r, fv1.FUNCTION_NAMESPACE)
+	if len(fns) != 0 {
+		selector[fv1.FUNCTION_NAMESPACE] = fns
+	}
+
+	pods, err := a.kubernetesClient.CoreV1().Pods(metav1.NamespaceAll).List(r.Context(), metav1.ListOptions{
+		LabelSelector: labels.Set(selector).AsSelector().String(),
+	})
+	if err != nil {
+		a.respondWithError(w, err)
+		return
+	}
+
+	resp, err := json.Marshal(pods.Items)
+	if err != nil {
+		a.respondWithError(w, err)
+		return
+	}
+
+	a.respondWithSuccess(w, resp)
 }

@@ -73,6 +73,7 @@ func (opts *CreateSubCommand) complete(input cli.Input) error {
 		opts.specFile = fmt.Sprintf("function-%v.yaml", fnName)
 	}
 	specDir := util.GetSpecDir(input)
+	specIgnore := util.GetSpecIgnore(input)
 
 	if !toSpec {
 		// check for unique function names within a namespace
@@ -126,7 +127,8 @@ func (opts *CreateSubCommand) complete(input cli.Input) error {
 		var pkg *fv1.Package
 
 		if toSpec {
-			fr, err := spec.ReadSpecs(specDir)
+
+			fr, err := spec.ReadSpecs(specDir, specIgnore)
 			if err != nil {
 				return errors.Wrap(err, fmt.Sprintf("error reading spec in '%v'", specDir))
 			}
@@ -166,8 +168,8 @@ func (opts *CreateSubCommand) complete(input cli.Input) error {
 		}
 
 		if toSpec {
-			specDir := util.GetSpecDir(input)
-			fr, err := spec.ReadSpecs(specDir)
+
+			fr, err := spec.ReadSpecs(specDir, specIgnore)
 			if err != nil {
 				return errors.Wrap(err, fmt.Sprintf("error reading spec in '%v'", specDir))
 			}
@@ -214,7 +216,11 @@ func (opts *CreateSubCommand) complete(input cli.Input) error {
 		}
 
 		buildcmd := input.String(flagkey.PkgBuildCmd)
-		pkgName := fmt.Sprintf("%v-%v", fnName, uuid.NewV4().String())
+		id, err := uuid.NewV4()
+		if err != nil {
+			return errors.Wrap(err, "error generating uuid")
+		}
+		pkgName := fmt.Sprintf("%v-%v", fnName, id.String())
 
 		// create new package in the same namespace as the function.
 		pkgMetadata, err = _package.CreatePackage(input, opts.Client(), pkgName, fnNamespace, envName, envNamespace,
@@ -363,7 +369,11 @@ func (opts *CreateSubCommand) run(input cli.Input) error {
 		}
 	}
 
-	triggerName := uuid.NewV4().String()
+	id, err := uuid.NewV4()
+	if err != nil {
+		return errors.Wrap(err, "error generating UUID")
+	}
+	triggerName := id.String()
 	ht := &fv1.HTTPTrigger{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      triggerName,

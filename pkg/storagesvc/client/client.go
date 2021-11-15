@@ -22,21 +22,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
 	"go.opencensus.io/plugin/ochttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.uber.org/zap"
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/fission/fission/pkg/storagesvc"
+	"github.com/fission/fission/pkg/utils/tracing"
 )
 
 type (
@@ -48,13 +46,8 @@ type (
 
 // Client creates a storage service client.
 func MakeClient(url string) *Client {
-	openTracingEnabled, err := strconv.ParseBool(os.Getenv("OPENTRACING_ENABLED"))
-	if err != nil {
-		fmt.Printf("error parsing OPENTRACING_ENABLED: %v\n", zap.Error(err))
-	}
-
 	var hc *http.Client
-	if openTracingEnabled {
+	if tracing.TracingEnabled(nil) {
 		hc = &http.Client{Transport: &ochttp.Transport{}}
 	} else {
 		hc = &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
@@ -107,7 +100,7 @@ func (c *Client) Upload(ctx context.Context, filePath string, metadata *map[stri
 		return "", err
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}

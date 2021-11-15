@@ -46,6 +46,7 @@ import (
 	fetcherConfig "github.com/fission/fission/pkg/fetcher/config"
 	genInformer "github.com/fission/fission/pkg/generated/informers/externalversions"
 	"github.com/fission/fission/pkg/utils"
+	otelUtils "github.com/fission/fission/pkg/utils/otel"
 )
 
 type (
@@ -169,7 +170,7 @@ func (executor *Executor) serveCreateFuncServices() {
 					specializationTimeout = fv1.DefaultSpecializationTimeOut
 				}
 
-				fnSpecializationTimeoutContext, cancel := context.WithTimeout(context.Background(),
+				fnSpecializationTimeoutContext, cancel := context.WithTimeout(req.context,
 					time.Duration(specializationTimeout+buffer)*time.Second)
 				defer cancel()
 
@@ -214,7 +215,9 @@ func (executor *Executor) serveCreateFuncServices() {
 }
 
 func (executor *Executor) createServiceForFunction(ctx context.Context, fn *fv1.Function) (*fscache.FuncSvc, error) {
-	executor.logger.Debug("no cached function service found, creating one",
+	logger := otelUtils.LoggerWithTraceID(ctx, executor.logger)
+	otelUtils.SpanTrackEvent(ctx, "createServiceForFunction", otelUtils.GetAttributesForFunction(fn)...)
+	logger.Debug("no cached function service found, creating one",
 		zap.String("function_name", fn.ObjectMeta.Name),
 		zap.String("function_namespace", fn.ObjectMeta.Namespace))
 
@@ -227,7 +230,7 @@ func (executor *Executor) createServiceForFunction(ctx context.Context, fn *fv1.
 	fsvc, fsvcErr := e.GetFuncSvc(ctx, fn)
 	if fsvcErr != nil {
 		e := "error creating service for function"
-		executor.logger.Error(e,
+		logger.Error(e,
 			zap.Error(fsvcErr),
 			zap.String("function_name", fn.ObjectMeta.Name),
 			zap.String("function_namespace", fn.ObjectMeta.Namespace))
@@ -238,6 +241,7 @@ func (executor *Executor) createServiceForFunction(ctx context.Context, fn *fv1.
 }
 
 func (executor *Executor) getFunctionServiceFromCache(ctx context.Context, fn *fv1.Function) (*fscache.FuncSvc, error) {
+	otelUtils.SpanTrackEvent(ctx, "getFunctionServiceFromCache", otelUtils.GetAttributesForFunction(fn)...)
 	t := fn.Spec.InvokeStrategy.ExecutionStrategy.ExecutorType
 	e, ok := executor.executorTypes[t]
 	if !ok {
@@ -257,7 +261,7 @@ func serveMetric(logger *zap.Logger) {
 
 // StartExecutor Starts executor and the executor components such as Poolmgr,
 // deploymgr and potential future executor types
-func StartExecutor(logger *zap.Logger, functionNamespace string, envBuilderNamespace string, port int, openTracingEnabled bool) error {
+func StartExecutor(ctx context.Context, logger *zap.Logger, functionNamespace string, envBuilderNamespace string, port int, openTracingEnabled bool) error {
 	fissionClient, kubernetesClient, _, metricsClient, err := crd.MakeFissionClient()
 	if err != nil {
 		return errors.Wrap(err, "failed to get kubernetes client")
@@ -320,7 +324,6 @@ func StartExecutor(logger *zap.Logger, functionNamespace string, envBuilderNames
 	}
 	cnmDeplInformer := cnmInformerFactory.Apps().V1().Deployments()
 	cnmSvcInformer := cnmInformerFactory.Core().V1().Services()
-	ctx := context.Background()
 	cnm, err := container.MakeContainer(
 		ctx, logger,
 		fissionClient, kubernetesClient,
@@ -375,7 +378,7 @@ func StartExecutor(logger *zap.Logger, functionNamespace string, envBuilderNames
 	if err != nil {
 		return err
 	}
-	go reaper.CleanupRoleBindings(logger, kubernetesClient, fissionClient, functionNamespace, envBuilderNamespace, time.Minute*30)
+	go reaper.CleanupRoleBindings(ctx, logger, kubernetesClient, fissionClient, functionNamespace, envBuilderNamespace, time.Minute*30)
 	go api.Serve(port, openTracingEnabled)
 	go serveMetric(logger)
 

@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +17,7 @@ import (
 
 	ferror "github.com/fission/fission/pkg/error"
 	"github.com/fission/fission/pkg/fetcher"
+	"github.com/fission/fission/pkg/utils/tracing"
 )
 
 type (
@@ -30,13 +29,8 @@ type (
 )
 
 func MakeClient(logger *zap.Logger, fetcherUrl string) *Client {
-	openTracingEnabled, err := strconv.ParseBool(os.Getenv("OPENTRACING_ENABLED"))
-	if err != nil {
-		logger.Fatal("error parsing OPENTRACING_ENABLED", zap.Error(err))
-	}
-
 	var hc *http.Client
-	if openTracingEnabled {
+	if tracing.TracingEnabled(logger) {
 		hc = &http.Client{Transport: &ochttp.Transport{}}
 	} else {
 		hc = &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
@@ -100,7 +94,7 @@ func sendRequest(logger *zap.Logger, ctx context.Context, httpClient *http.Clien
 
 		if err == nil {
 			if resp.StatusCode == 200 {
-				body, err := ioutil.ReadAll(resp.Body)
+				body, err := io.ReadAll(resp.Body)
 				if err != nil {
 					logger.Error("error reading response body", zap.Error(err))
 				}

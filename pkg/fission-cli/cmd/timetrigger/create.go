@@ -56,7 +56,11 @@ func (opts *CreateSubCommand) do(input cli.Input) error {
 func (opts *CreateSubCommand) complete(input cli.Input) error {
 	name := input.String(flagkey.TtName)
 	if len(name) == 0 {
-		name = uuid.NewV4().String()
+		id, err := uuid.NewV4()
+		if err != nil {
+			return err
+		}
+		name = id.String()
 	}
 
 	fnName := input.String(flagkey.TtFnName)
@@ -73,7 +77,8 @@ func (opts *CreateSubCommand) complete(input cli.Input) error {
 
 	if input.Bool(flagkey.SpecSave) {
 		specDir := util.GetSpecDir(input)
-		fr, err := spec.ReadSpecs(specDir)
+		specIgnore := util.GetSpecIgnore(input)
+		fr, err := spec.ReadSpecs(specDir, specIgnore)
 		if err != nil {
 			return errors.Wrap(err, fmt.Sprintf("error reading spec in '%v'", specDir))
 		}

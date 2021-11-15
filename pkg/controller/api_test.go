@@ -20,7 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -359,7 +359,9 @@ func TestMain(m *testing.M) {
 	panicIf(err)
 
 	// testNS isolation for running multiple CI builds concurrently.
-	testNS = uuid.NewV4().String()
+	id, err := uuid.NewV4()
+	panicIf(err)
+	testNS = id.String()
 	_, err = kubeClient.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNS,
@@ -374,7 +376,8 @@ func TestMain(m *testing.M) {
 
 	panicIf(err)
 
-	go Start(logger, 8888, true, true)
+	ctx := context.Background()
+	go Start(ctx, logger, 8888, true, true)
 
 	time.Sleep(5 * time.Second)
 
@@ -394,7 +397,7 @@ func TestMain(m *testing.M) {
 	}
 	assert(found, "incorrect response content type")
 
-	_, err = ioutil.ReadAll(resp.Body)
+	_, err = io.ReadAll(resp.Body)
 	panicIf(err)
 
 	os.Exit(m.Run())

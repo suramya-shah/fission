@@ -18,7 +18,7 @@ package function
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/fission/fission/pkg/controller/client"
@@ -35,6 +37,7 @@ import (
 	"github.com/fission/fission/pkg/fission-cli/console"
 	flagkey "github.com/fission/fission/pkg/fission-cli/flag/key"
 	"github.com/fission/fission/pkg/fission-cli/util"
+	otelUtils "github.com/fission/fission/pkg/utils/otel"
 )
 
 type TestSubCommand struct {
@@ -128,7 +131,7 @@ func (opts *TestSubCommand) do(input cli.Input) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return errors.Wrap(err, "error reading response from function")
 	}
@@ -153,7 +156,19 @@ func (opts *TestSubCommand) do(input cli.Input) error {
 }
 
 func doHTTPRequest(ctx context.Context, url string, headers []string, method, body string) (*http.Response, error) {
-	method, err := httptrigger.GetMethod(method)
+	shutdown, err := otelUtils.InitProvider(ctx, nil, "fission-cli")
+	if err != nil {
+		return nil, err
+	}
+	if shutdown != nil {
+		defer shutdown(ctx)
+	}
+
+	tracer := otel.Tracer("fission-cli")
+	ctx, span := tracer.Start(ctx, "httpRequest")
+	defer span.End()
+
+	method, err = httptrigger.GetMethod(method)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +185,8 @@ func doHTTPRequest(ctx context.Context, url string, headers []string, method, bo
 		}
 		req.Header.Set(headerKeyValue[0], headerKeyValue[1])
 	}
-	resp, err := http.DefaultClient.Do(req.WithContext(ctx))
+	hc := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+	resp, err := hc.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, errors.Wrap(err, "error executing HTTP request")
 	}
@@ -185,7 +201,7 @@ func printPodLogs(client client.Interface, fnMeta *metav1.ObjectMeta) (string, e
 	}
 	defer reader.Close()
 
-	body, err := ioutil.ReadAll(reader)
+	body, err := io.ReadAll(reader)
 	if err != nil {
 		return "", errors.Wrap(err, "error reading the response body")
 	}

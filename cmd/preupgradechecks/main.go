@@ -22,6 +22,7 @@ import (
 
 	"github.com/fission/fission/pkg/info"
 	"github.com/fission/fission/pkg/utils/loggerfactory"
+	"github.com/fission/fission/pkg/utils/signals"
 )
 
 func getStringArgWithDefault(arg interface{}, defaultValue string) string {
@@ -57,15 +58,16 @@ Options:
 			zap.Error(err))
 	}
 
-	crd := crdBackedClient.GetFunctionCRD()
+	ctx := signals.SetupSignalHandlerWithContext(logger)
+	crd := crdBackedClient.GetFunctionCRD(ctx)
 	if crd == nil {
 		logger.Info("nothing to do since CRDs are not present on the cluster")
 		return
 	}
 
-	err = crdBackedClient.LatestSchemaApplied()
+	err = crdBackedClient.LatestSchemaApplied(ctx)
 	if err != nil {
 		logger.Fatal("New CRDs are not applied")
 	}
-	crdBackedClient.VerifyFunctionSpecReferences()
+	crdBackedClient.VerifyFunctionSpecReferences(ctx)
 }

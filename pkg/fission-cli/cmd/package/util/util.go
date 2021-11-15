@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -86,7 +85,7 @@ func UploadArchiveFile(ctx context.Context, client client.Interface, fileName st
 }
 
 func GetContents(filePath string) ([]byte, error) {
-	code, err := ioutil.ReadFile(filePath)
+	code, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error reading %v", filePath)
 	}
@@ -107,7 +106,11 @@ func DownloadToTempFile(fileUrl string) (string, error) {
 		return "", errors.Wrapf(err, "error creating temp directory %v", tmpDir)
 	}
 
-	tmpFilename := uuid.NewV4().String()
+	id, err := uuid.NewV4()
+	if err != nil {
+		return "", errors.Wrapf(err, "error generating UUID")
+	}
+	tmpFilename := id.String()
 	destination := filepath.Join(tmpDir, tmpFilename)
 
 	err = WriteArchiveToFile(destination, reader)
@@ -135,7 +138,11 @@ func WriteArchiveToFile(fileName string, reader io.Reader) error {
 	if err != nil {
 		return err
 	}
-	tmpFileName := uuid.NewV4().String()
+	id, err := uuid.NewV4()
+	if err != nil {
+		return err
+	}
+	tmpFileName := id.String()
 
 	path := filepath.Join(tmpDir, tmpFileName+".tmp")
 	w, err := os.Create(path)

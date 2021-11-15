@@ -1,7 +1,7 @@
 ####################################
 # This file can be used with Skaffold (https://github.com/GoogleContainerTools/skaffold) to
 # build and deploy Fission to Kubernetes cluster.
-# Skaffold version v1.26.1 is used for this configuration.
+# Skaffold version v1.31.0 is used for this configuration.
 ############## Usage ##############
 # Skaffold CLI should be installed on your machine.
 # For building & deploying to Cloud Provider
@@ -10,23 +10,18 @@
 # For building & deploying to Kind cluster use Kind profile
 # $ `skaffold run -p kind`
 ####################################
-apiVersion: skaffold/v2beta17
+apiVersion: skaffold/v2beta22
 kind: Config
 build:
   artifacts:
-  - image: fission
-    context: .
-    docker:
-      dockerfile: cmd/fission-bundle/Dockerfile.fission-bundle
+  - image: fission-bundle
+    context: dist/fission-bundle_linux_amd64
   - image: fetcher
-    docker:
-      dockerfile: cmd/fetcher/Dockerfile.fission-fetcher
-  - image: preupgradechecks
-    docker:
-      dockerfile: cmd/preupgradechecks/Dockerfile.fission-preupgradechecks
+    context: dist/fetcher_linux_amd64
+  - image: pre-upgrade-checks
+    context: dist/pre-upgrade-checks_linux_amd64
   - image: reporter
-    docker:
-      dockerfile: cmd/reporter/Dockerfile.reporter
+    context: dist/reporter_linux_amd64
 deploy:
   helm:
     releases:
@@ -36,23 +31,32 @@ deploy:
       - ./charts/fission-all/values.yaml
       artifactOverrides:
         fetcher.image: fetcher
-        image: fission
+        image: fission-bundle
         postInstallReportImage: reporter
-        preUpgradeChecksImage: preupgradechecks
+        preUpgradeChecks.image: pre-upgrade-checks
       namespace: fission
       setValues:
-        analytics: "false"
-        debugEnv: "false"
+        analytics: false
+        debugEnv: false
         fetcher.imageTag: ""
         imageTag: ""
+        preUpgradeChecks.imageTag: ""
         namespace: fission
         pprof.enabled: false
-        prometheus.enabled: "false"
+        prometheus.enabled: false
+        canaryDeployment.enabled: false
+        nats.enabled: false
+        influxdb.enabled: false
         pruneInterval: "60"
         repository: index.docker.io
         routerServiceType: LoadBalancer
         openTracing.enabled: false
-        otelCollectorEndpoint: ""
+        openTelemetry.otlpCollectorEndpoint: ""
+        openTelemetry.otlpInsecure: true
+        priorityClassName: system-cluster-critical
+        # Use /var/log directory for kind logs export
+        terminationMessagePath: /var/log/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
       wait: true
     flags:
       install:
@@ -101,6 +105,12 @@ profiles:
   - op: replace
     path: /deploy/helm/releases/0/setValues/prometheus.enabled
     value: true
+  - op: replace
+    path: /deploy/helm/releases/0/setValues/influxdb.enabled
+    value: true
+  - op: replace
+    path: /deploy/helm/releases/0/setValues/canaryDeployment.enabled
+    value: true
 - name: kind-opentelemetry
   patches:
   - op: replace
@@ -113,5 +123,5 @@ profiles:
     path: /deploy/helm/releases/0/setValues/pprof.enabled
     value: true
   - op: replace
-    path: /deploy/helm/releases/0/setValues/otelCollectorEndpoint
+    path: /deploy/helm/releases/0/setValues/openTelemetry.otlpCollectorEndpoint
     value: "otel-collector.opentelemetry-operator-system.svc:4317"

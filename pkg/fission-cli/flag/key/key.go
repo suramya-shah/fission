@@ -120,6 +120,7 @@ const (
 	EnvGracePeriod     = "graceperiod"
 	EnvVersion         = "version"
 	EnvImagePullSecret = "imagepullsecret"
+	EnvExecutorType    = "executortype"
 
 	KwName      = resourceName
 	KwFnName    = "function"
@@ -150,6 +151,7 @@ const (
 	SpecDelete   = "delete"
 	SpecDry      = "dry"
 	SpecValidate = "validation"
+	SpecIgnore   = "specignore"
 
 	SupportOutput = Output
 	SupportNoZip  = "nozip"

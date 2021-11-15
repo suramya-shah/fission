@@ -86,7 +86,8 @@ func (opts *CreateSubCommand) run(input cli.Input) error {
 
 	if input.Bool(flagkey.SpecSave) {
 		specDir = util.GetSpecDir(input)
-		fr, err := spec.ReadSpecs(specDir)
+		specIgnore := util.GetSpecIgnore(input)
+		fr, err := spec.ReadSpecs(specDir, specIgnore)
 		if err != nil {
 			return errors.Wrap(err, fmt.Sprintf("error reading spec in '%v'", specDir))
 		}
@@ -160,7 +161,11 @@ func CreatePackage(input cli.Input, client client.Interface, pkgName string, pkg
 	}
 
 	if len(pkgName) == 0 {
-		pkgName = strings.ToLower(uuid.NewV4().String())
+		id, err := uuid.NewV4()
+		if err != nil {
+			return nil, errors.Wrap(err, "error generating UUID")
+		}
+		pkgName = strings.ToLower(id.String())
 	}
 
 	pkg := &fv1.Package{
@@ -181,7 +186,7 @@ func CreatePackage(input cli.Input, client client.Interface, pkgName string, pkg
 
 	if input.Bool(flagkey.SpecSave) {
 		// if a package with the same spec exists, don't create a new spec file
-		fr, err := spec.ReadSpecs(util.GetSpecDir(input))
+		fr, err := spec.ReadSpecs(util.GetSpecDir(input), util.GetSpecIgnore(input))
 		if err != nil {
 			return nil, errors.Wrap(err, "error reading specs")
 		}

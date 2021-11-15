@@ -32,8 +32,8 @@ import (
 const (
 	usage = `Fission: Fast and Simple Serverless Functions for Kubernetes
 
- * Github: https://github.com/fission/fission 
- * Documentation: https://docs.fission.io/docs
+ * GitHub: https://github.com/fission/fission
+ * Documentation: https://fission.io/docs
 `
 )
 
